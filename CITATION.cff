@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use EuroFlood, please cite this software and the underlying dataset."
+title: "EuroFlood: query Europe's satellite flood-depth maps by place and time"
+abstract: >-
+  A lightweight, cloud-native Python tool that turns the JRC / Copernicus
+  CEMS-EFAS Satellite-Derived Flood Depth Maps for Europe into a queryable index:
+  discover which flood events touched a region (and when) and download only the
+  depth rasters you need.
+type: software
+version: "0.1.0"
+date-released: "2026-07-08"
+authors:
+  - family-names: Hackl
+    given-names: Jürgen
+    orcid: "https://orcid.org/0000-0002-8849-5751"
+    affiliation: "Princeton University, Complex Infrastructure Systems Group"
+license: MIT
+repository-code: "https://github.com/cisgroup/euroflood"
+url: "https://cisgroup.github.io/euroflood/"
+keywords:
+  - flood
+  - flood depth
+  - CEMS-EFAS
+  - GLOFAS
+  - Copernicus
+  - Sentinel-1
+  - geospatial
+  - remote sensing
+references:
+  - type: data
+    title: "Satellite-Derived Flood Depth Maps for Europe"
+    authors:
+      - family-names: Betterle
+        given-names: Andrea
+      - family-names: Salamon
+        given-names: Peter
+    year: 2025
+    publisher:
+      name: "European Commission, Joint Research Centre (JRC) / Copernicus EMS"
+    url: "https://data.jrc.ec.europa.eu/dataset/0bc96690-b89c-4909-9166-c2c322a20130"
+    notes: "Licensed CC-BY-4.0."

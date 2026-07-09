@@ -1,0 +1,36 @@
+name: docs
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    # Docs are hosted from the public mirror (cisgroup.github.io/euroflood). On the
+    # private dev repo this job is skipped, so it never deploys a private-repo Pages site.
+    if: github.repository == 'cisgroup/euroflood'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        # Match ci.yml: the viz extra is needed so mkdocstrings can import
+        # euroflood.viz and render the visualization reference.
+        run: uv sync --extra viz
+
+      - name: Deploy docs to GitHub Pages
+        run: uv run mkdocs gh-deploy --force

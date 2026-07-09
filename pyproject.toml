@@ -1,0 +1,206 @@
+[project]
+name = "euroflood"
+version = "0.1.0"
+description = "Processing toolkit for European Satellite-Derived Flood Depth Maps (JRC/CEMS-EFAS): ingest, index, and extract flood data."
+authors = [
+    {name = "Jürgen Hackl", email = "hackl@princeton.edu"}
+]
+license = {text = "MIT"}
+readme = {file = "README.md", content-type = "text/markdown"}
+requires-python = ">=3.13,!=3.14.1,<4.0"
+keywords = [
+    "flood", "flood depth", "CEMS-EFAS", "GLOFAS", "Copernicus", "Sentinel-1",
+    "cloud-optimized geotiff", "geoparquet", "geospatial", "remote sensing",
+    "Europe", "flood risk", "hydrology",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Scientific/Engineering :: GIS",
+    "Topic :: Scientific/Engineering :: Hydrology",
+    "Typing :: Typed",
+]
+dependencies = [
+    "beautifulsoup4>=4.14.3,<5.0.0",
+    "duckdb>=1.4.3,<2.0.0",
+    "pandas>=2.3.3,<3.0.0",
+    "rasterio>=1.5.0,<2.0.0",
+    "numpy>=2.4.1,<3.0.0",
+    "shapely>=2.1.2,<3.0.0",
+    "pyproj>=3.7,<4.0",
+    "pyarrow>=23.0.0,<24.0.0",
+    "structlog>=25.5.0,<26.0.0",
+    "pydantic>=2.12.5,<3.0.0",
+    "pydantic-settings>=2.12.0,<3.0.0",
+    "tenacity>=9.1.2,<10.0.0",
+    "click>=8.4.2",
+    "platformdirs>=4.10.0",
+    "requests>=2.34.2",
+    "geopandas>=1.1.3",
+    "pooch>=1.8.0",
+    "rich>=13,<15",
+]
+
+[project.optional-dependencies]
+# Visualization extra: static plots (matplotlib + contextily basemaps) and
+# interactive maps (folium, geopandas' own .explore() engine). Lazily imported by
+# `euroflood.viz`, so the core install stays light. Install with
+# `pip install "euroflood[viz]"`.
+viz = [
+    "matplotlib>=3.9",
+    "contextily>=1.6",
+    "folium>=0.17",
+    "branca>=0.7",
+    # Lets rich render the download/mirror progress bar in Jupyter (no warning).
+    "ipywidgets>=8",
+]
+# Publishing extra: upload the built index bundle to Source Cooperative (S3-compatible).
+# Only producers running `euroflood publish --source-coop` need it. Install with
+# `pip install "euroflood[publish]"`.
+publish = [
+    "boto3>=1.35",
+    "botocore>=1.35",
+]
+
+[project.urls]
+Homepage = "https://github.com/cisgroup/euroflood"
+Repository = "https://github.com/cisgroup/euroflood"
+Documentation = "https://cisgroup.github.io/euroflood/"
+Issues = "https://github.com/cisgroup/euroflood/issues"
+
+[project.scripts]
+euroflood = "euroflood.cli:cli"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/euroflood"]
+
+[dependency-groups]
+dev = [
+    "boto3>=1.35",
+    "botocore>=1.35",
+    "pytest>=9.0.2,<10.0.0",
+    "pytest-cov>=7.0.0,<8.0.0",
+    "deptry>=0.24.0,<0.25.0",
+    "mypy>=1.19.1,<2.0.0",
+    "ruff>=0.13,<1.0",
+    "pylsp-mypy>=0.7.0,<0.8.0",
+    "python-lsp-server[all]>=1.14.0,<2.0.0",
+    "mkdocs>=1.6.1,<2.0.0",
+    "mkdocs-material>=9.7.1,<10.0.0",
+    "mkdocstrings-python>=2.0.1,<3.0.0",
+    "pytest-mock>=3.15.1,<4.0.0",
+    "pandas-stubs>=3.0.3.260530",
+    "pre-commit>=4.6.0",
+    # Examples/tutorials: jupytext-paired notebooks, executed as tests (nbmake) and
+    # rendered in the docs (mkdocs-jupyter).
+    "nbmake>=1.5",
+    "jupytext>=1.16",
+    "ipykernel>=6.29",
+    "jupyterlab>=4.2",
+    "pytest-xdist>=3.6",
+    "mkdocs-jupyter>=0.25",
+]
+
+[tool.ruff]
+line-length = 88
+target-version = "py313"
+src = ["src", "tests"]
+# Notebooks are rendered via jupytext-paired .py files; exclude the .ipynb themselves.
+extend-exclude = ["*.ipynb"]
+
+[tool.ruff.lint]
+# E/F/I/UP/B enforced; D (docstrings) and SIM start advisory (see CI) then promote.
+select = ["E", "F", "I", "UP", "B", "SIM", "D", "RUF"]
+ignore = [
+    "D203",   # one-blank-line-before-class (conflicts with D211)
+    "D213",   # multi-line-summary-second-line (conflicts with D212)
+    "E501",   # line-too-long: the formatter handles code; leaves only strings/docstrings
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/**" = ["D"]
+# Tutorial scripts (jupytext .py:percent): notebook idioms — no docstrings, imports
+# per-cell (not top-of-file), and bare display expressions like `cat`.
+"examples/**" = ["D", "E402", "B018"]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google"
+
+[tool.ruff.format]
+docstring-code-format = true
+
+[tool.jupytext]
+# Pair each tutorial notebook to a clean .py:percent (reviewable/lintable source) +
+# a rich .ipynb (outputs for the docs). `jupytext --sync` keeps them identical.
+formats = "ipynb,py:percent"
+# The tutorials use no IPython magics; don't comment plain statements (e.g. a bare
+# `cat` display, which collides with the `cat` shell command).
+comment_magics = false
+
+[tool.mypy]
+python_version = "3.13"
+files = ["src"]
+strict = true
+warn_unreachable = true
+warn_redundant_casts = true
+pretty = true
+
+[[tool.mypy.overrides]]
+# Geospatial libs without type stubs.
+module = [
+    "rasterio.*",
+    "duckdb.*",
+    "shapely.*",
+    "pyproj.*",
+    "geopandas.*",
+    "pyarrow.*",
+    "pooch.*",
+    "matplotlib.*",
+    "folium.*",
+    "contextily.*",
+    "branca.*",
+    "boto3.*",
+    "botocore.*",
+]
+ignore_missing_imports = true
+
+[tool.deptry]
+known_first_party = ["euroflood"]
+
+[tool.deptry.per_rule_ignores]
+# These viz deps are loaded lazily via importlib (euroflood.viz._deps.require) or a
+# find_spec probe, so deptry's static scan can't see them:
+#   folium, contextily - imported by name only inside euroflood.viz.require(...)
+#   ipywidgets         - probed via importlib.util.find_spec in _progress.py
+DEP002 = ["folium", "contextily", "ipywidgets"]
+
+[tool.pytest.ini_options]
+minversion = "9.0"
+testpaths = ["tests"]
+addopts = "-ra --strict-markers --strict-config"
+markers = [
+    "integration: end-to-end tests that may touch heavier IO",
+    "realdata: tests that read the committed real (CC-BY-4.0) data fixtures",
+    "online: tests that hit the live published index over the network (opt-in)",
+]
+
+[tool.coverage.run]
+source = ["euroflood"]
+branch = true
+
+[tool.coverage.report]
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if __name__ == .__main__.:",
+    "raise NotImplementedError",
+]
+fail_under = 90

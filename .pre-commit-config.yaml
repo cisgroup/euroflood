@@ -1,0 +1,36 @@
+# Local developer convenience. CI is the enforcement boundary, so a contributor
+# who skips these hooks still cannot merge a violation. mypy is intentionally
+# left to CI only (too slow for the local commit loop).
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.15.20
+    hooks:
+      - id: ruff-check
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        # mkdocs.yml uses mkdocs-material's `!!python/name:` tags, which the
+        # safe-loading check-yaml hook can't construct; `mkdocs build --strict`
+        # (CI) validates it instead.
+        exclude: ^mkdocs\.yml$
+      - id: check-toml
+      - id: check-added-large-files
+        # Tutorial notebooks embed interactive folium maps + plot outputs; the
+        # visualize tutorial's recurrence map over the bbox ROI runs ~1.2 MB, so
+        # keep a 1.5 MB guard against genuinely large files.
+        args: ["--maxkb=1536"]
+
+  # Keep each tutorial's .py:percent and .ipynb in sync (runs after ruff so any
+  # --fix on the .py propagates into the paired notebook).
+  - repo: https://github.com/mwouts/jupytext
+    rev: v1.19.4
+    hooks:
+      - id: jupytext
+        args: [--sync]
+        files: ^examples/.*\.(py|ipynb)$

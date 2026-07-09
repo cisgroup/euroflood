@@ -1,0 +1,8 @@
+{
+  "schema_version": 5,
+  "format": "parquet-single",
+  "n_combos": 1572891,
+  "row_group_size": 20000,
+  "filename": "flood_dictionary.parquet",
+  "events": "events.parquet"
+}

@@ -1,0 +1,71 @@
+name: Release
+
+# Publish to PyPI when a version tag is pushed (e.g. `git tag v1.0.0 && git push --tags`).
+# Uses PyPI Trusted Publishing (OIDC) — no API token stored. One-time setup: add a
+# trusted publisher on PyPI for repo cisgroup/euroflood, workflow `release.yml`,
+# environment `pypi`.
+
+on:
+  push:
+    tags: ["v*"]
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        # Match ci.yml (--extra viz): the gate runs the full pytest suite + mkdocs, both of
+        # which need the viz deps (matplotlib/folium) — without them a viz test errors and
+        # the gate (hence the whole release) fails.
+        run: uv sync --extra viz
+
+      - name: Verify tag matches package version
+        run: |
+          pkg=$(uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
+          if [ "v$pkg" != "$GITHUB_REF_NAME" ]; then
+            echo "::error::Tag $GITHUB_REF_NAME does not match pyproject version v$pkg"
+            exit 1
+          fi
+
+      - name: Gate (lint, types, deps, tests, docs)
+        run: |
+          uv run ruff format --check .
+          uv run ruff check .
+          uv run mypy src
+          uv run deptry .
+          uv run pytest -q
+          uv run mkdocs build --strict
+
+      - name: Build sdist + wheel
+        run: uv build
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  pypi:
+    needs: build
+    # Only the public mirror publishes to PyPI (where the trusted publisher is registered).
+    # The private dev repo never tags for release, but guard it belt-and-suspenders.
+    if: github.repository == 'cisgroup/euroflood'
+    runs-on: ubuntu-latest
+    environment: pypi
+    permissions:
+      id-token: write # OIDC — required for trusted publishing
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
+        uses: pypa/gh-action-pypi-publish@release/v1

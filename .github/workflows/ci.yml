@@ -1,0 +1,73 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  quality:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # Add "3.14" once rasterio/osmnx/duckdb wheels are available for it.
+        python-version: ["3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: ${{ matrix.python-version }}
+
+      - name: Install dependencies
+        run: uv sync --extra viz
+
+      - name: Ruff format check
+        run: uv run ruff format --check .
+
+      - name: Ruff lint
+        run: uv run ruff check .
+
+      - name: Type check (mypy)
+        run: uv run mypy src
+
+      - name: Dependency check (deptry)
+        run: uv run deptry .
+
+      - name: Tests + coverage
+        # -n auto parallelises the suite across the runner's cores (pytest-xdist);
+        # pytest-cov aggregates per-worker coverage, so fail_under still applies.
+        run: uv run pytest -n auto --cov=euroflood --cov-report=xml --cov-report=term-missing
+
+      - name: Tutorials (offline smoke)
+        # Execute the cheap-path tutorials against the committed Cologne fixture with no
+        # network. The download/hazard tutorials (04, 05) need the live index -> nightly
+        # examples.yml. Absolute paths: nbmake runs each notebook with cwd = examples/.
+        env:
+          EUROFLOOD_CACHE_DIR: ${{ github.workspace }}/tests/fixtures/realdata/index
+          EUROFLOOD_INDEX_MODE: local
+          EUROFLOOD_GEOCODER_BACKEND: local
+          EUROFLOOD_BOUNDARY_DATASET_PATH: ${{ github.workspace }}/tests/fixtures/realdata/nuts_subset.geojson
+          EUROFLOOD_SHOW_PROGRESS: "0"
+        run: >-
+          uv run pytest --nbmake --nbmake-timeout=120
+          examples/01_quickstart.ipynb
+          examples/02_discover_and_filter.ipynb
+          examples/03_visualize.ipynb
+          examples/07_cli_and_config.ipynb
+
+      - name: Docs build (strict)
+        run: uv run mkdocs build --strict
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@v4
+        continue-on-error: true
+        with:
+          files: ./coverage.xml

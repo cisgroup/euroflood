@@ -1,0 +1,11 @@
+{
+  "cache_schema_version": 1,
+  "dictionary_schema_version": 5,
+  "grid": {
+    "origin_x": -46.8,
+    "origin_y": 85.1,
+    "resolution": 0.0008333333333333334,
+    "width_px": 131760,
+    "height_px": 69720
+  }
+}
