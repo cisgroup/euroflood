@@ -85,8 +85,15 @@ The same index can live locally or be streamed:
   over HTTP via GDAL's `/vsicurl`, and only the **~14 MB** dictionary + events tables
   are cached on first use (SHA-256-verified). A query downloads a few MB, never the
   whole index. Controlled by `EUROFLOOD_INDEX_MODE` / `EUROFLOOD_INDEX_BASE_URL`.
-- **Local:** everything is read from the cache directory. `euroflood mirror-index`
+- **Local:** everything is read from the cache directory. `euroflood mirror index`
   pulls the full **~130 MB** bundle once for fully-offline / HPC use.
+
+**Hazard has a parallel switch, `hazard_mode`** (`auto`/`local`/`remote`), and both
+collections share a master `EUROFLOOD_OFFLINE=1` / `euroflood.offline()` toggle that forces
+everything cache-only and the geocoder offline. Stage data with `euroflood mirror
+index|floods|hazard|all` and gate readiness with `euroflood verify … --deep`. In `local`/offline
+mode a missing tile raises a clear error naming the `mirror` command to run — never a silent
+partial result.
 
 ## What the visualizations reuse
 

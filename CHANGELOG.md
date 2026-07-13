@@ -6,6 +6,44 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 
 ## [Unreleased]
 
+## [0.2.0] - 2026-07-13
+
+### Added
+- **Unified offline / HPC mirror family**: a `mirror` command group stages any data layer into
+  the cache for offline use — `mirror index` (the flood catalogue, so `floods()` queries run
+  offline), `mirror floods --bbox …` (historic flood **depth maps** for a region), `mirror hazard
+  --bbox …` (GLOFAS **hazard tiles** for a region), and `mirror all`. A matching `verify` group
+  (`verify index|floods|hazard|all|remote`, `--deep`) reports local-mirror readiness
+  (present/missing/corrupt) against a sha256+size ledger. Region-scoped mirrors keep the HPC
+  footprint small and accumulate across runs. Python: `euroflood.mirror(target, …)` /
+  `euroflood.verify(target, …)`.
+- **`EUROFLOOD_OFFLINE` / `euroflood.offline()`**: one switch forces both collections cache-only
+  (no network) and the geocoder to the local NUTS backend. A new `hazard_mode` setting
+  (`auto`/`local`/`remote`) mirrors `index_mode`; in offline mode a missing tile/index raises a
+  clear error naming the exact `mirror` command instead of failing silently.
+
+### Changed
+- **CLI mirror/verify commands regrouped (breaking).** The consumer offline commands are now
+  subcommands: `mirror-index` → `mirror index`, `mirror-hazard` → `mirror hazard`, `verify-remote`
+  → `verify remote`. The producer bulk-download command `mirror` (the ~35 GB raw-tile fetch used to
+  *build* the index) is renamed `fetch-sources` to free the `mirror` namespace for the consumer
+  group. The Python `euroflood.mirror_hazard()` is superseded by `euroflood.mirror("hazard", …)`.
+  (Pre-1.0: no backward-compatible aliases are kept.)
+
+### Fixed
+- **Silent hazard truncation on a partial GLOFAS tile fetch.**
+  For an ROI spanning more than one GLOFAS tile, `hazard(...).download()` dropped any tile whose
+  fetch failed and mosaicked whatever subset survived — warning only when the set was *completely*
+  empty. A single flaky JRC tile fetch therefore produced a valid-looking GeoTIFF covering only
+  part of the ROI, with no error, silently corrupting any multi-return-period sweep. It now **fails
+  closed**: an incomplete tile set is never mosaicked. A return period whose tiles cannot all be
+  fetched is skipped with a warning (its raster is simply absent, not truncated), the complete
+  sibling return periods still succeed, and a wholly-failed request raises. Crops are also written
+  atomically, and each hazard raster now carries `EUROFLOOD_SOURCE_TILES` / `N_SOURCE_TILES` /
+  `RETURN_PERIOD` GeoTIFF tags so its tile coverage is auditable.
+
+## [0.1.0] - 2026-07-09
+
 ### Added
 - **ROI `shape` option**: `floods()`/`hazard()` (and the `floods`/`download`/`hazard` CLI commands via
   `--shape`) take `shape="exact"` (default, the raw admin boundary), `"bbox"` (its bounding rectangle),
@@ -18,7 +56,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
   (Quickstart → Discover & filter → Visualize → Download & measure → Hazard → Quantitative
   analysis → CLI & configuration), jupytext-paired (`.py` + `.ipynb`), rendered on the docs
   site (mkdocs-jupyter) and executed as tests — the cheap-path ones offline against a committed
-  fixture on every PR, all of them live nightly. Supersedes the old root `demo.py`/`demo.ipynb`.
+  fixture on every PR, all of them live monthly (and on demand). Supersedes the old root `demo.py`/`demo.ipynb`.
 - **Notebook/TTY progress bars**: `.download()` shows a transfer bar and the first-query index
   mirror shows activity when running interactively (a Jupyter notebook or a TTY). Toggle with
   `settings.show_progress` / `EUROFLOOD_SHOW_PROGRESS`.
@@ -56,6 +94,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
   consumer Getting Started walkthrough; full API reference coverage for the
   consumer API (`floods`, `hazard`, `download`, `FloodFrame`, configuration);
   `CONTRIBUTING.md`, `CITATION.cff`, and this changelog.
+
 
 ### Changed
 - **Leaner `viz` extra.** Removed the unused `mapclassify` dependency from the optional
@@ -105,8 +144,10 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 - Replaced `tqdm` with `rich` for progress; `structlog` still owns machine/JSON
   logs on stderr (HPC-friendly), while user-facing output goes to stdout.
 
+
 ### Removed
 - Stale `readme.org` (superseded by `README.md`).
+
 
 ### Fixed
 - Corrected stale docstrings (geocoder default backend, the `extract` CLI verb,

@@ -23,7 +23,8 @@ Everything importable from the top-level `euroflood` package:
 ```python
 import euroflood as ef
 
-ef.floods, ef.hazard, ef.download, ef.mirror_hazard   # queries + fetch
+ef.floods, ef.hazard, ef.download          # queries + fetch
+ef.mirror, ef.verify, ef.offline           # offline/HPC staging
 ef.FloodFrame                                          # what floods()/hazard() return
 ef.plot, ef.explore, ef.footprints                     # viz (needs [viz] extra)
 ef.plot_depth, ef.explore_depth, ef.open_depth, ef.DepthRaster

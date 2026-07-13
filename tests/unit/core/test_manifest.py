@@ -73,6 +73,18 @@ def test_stamp_manifest_updates_version_and_urls(tmp_path):
     validate_publish_manifest(mpath, base_dir=tmp_path, verify_checksums=True)
 
 
+def test_stamp_manifest_merges_source_urls(tmp_path):
+    """A partial source_urls stamp preserves keys set by a previous stamp (merge)."""
+    f = _write_file(tmp_path / "index.tif")
+    mpath = tmp_path / "manifest.json"
+    write_publish_manifest(mpath, index_version="0.0.0", files={"index.tif": f})
+    stamp_manifest(mpath, source_urls={"source_coop": "https://sc/x/v1"})
+    stamp_manifest(mpath, source_urls={"zenodo_doi": "10.5281/zenodo.9"})  # partial
+    urls = json.loads(mpath.read_text())["source_urls"]
+    assert urls["source_coop"] == "https://sc/x/v1"  # preserved, not wiped
+    assert urls["zenodo_doi"] == "10.5281/zenodo.9"
+
+
 def test_validate_publish_manifest_ok_and_checksum_tamper(tmp_path):
     f = _write_file(tmp_path / "index.tif", b"data")
     mpath = tmp_path / "manifest.json"

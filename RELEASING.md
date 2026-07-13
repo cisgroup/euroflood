@@ -71,7 +71,7 @@ The bundle is produced on HPC (`euroflood build-index`; see the
    so a fresh install reads the new bundle, then cut a library release.
 4. Check the live index any time:
    ```bash
-   euroflood verify-remote                          # uses the baked / configured URL
+   euroflood verify remote                          # uses the baked / configured URL
    EUROFLOOD_RUN_ONLINE_TESTS=1 uv run pytest -m online
    ```
 

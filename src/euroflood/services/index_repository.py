@@ -23,10 +23,9 @@ import threading
 from pathlib import Path
 from typing import Any
 
-import requests
 import structlog
 
-from .._data import fetch_file, resolve_base_url
+from .._data import fetch_file, http_get, resolve_base_url
 from ..config import Settings, get_settings
 
 logger = structlog.get_logger(__name__)
@@ -74,7 +73,13 @@ class IndexRepository:
 
     @property
     def is_remote(self) -> bool:
-        """True when the hosted index may be used (mode allows it + a base URL exists)."""
+        """True when the hosted index may be used (mode allows it + a base URL exists).
+
+        Always False under the master ``offline`` switch, so a query on an offline node
+        never streams the COG or mirrors tables over the network.
+        """
+        if self.settings.offline:
+            return False
         return self.settings.index_mode in {"auto", "remote"} and bool(
             resolve_base_url(self.settings)
         )
@@ -156,17 +161,26 @@ class IndexRepository:
                 advance(1)
 
     def _fetch_json(self, rel: str) -> dict[str, Any]:
-        """Fetch a small JSON file, cache it locally, and return it parsed."""
-        resp = requests.get(self._url(rel), timeout=self.settings.timeout_seconds)
-        resp.raise_for_status()
+        """Fetch a small JSON file, cache it locally, and return it parsed.
+
+        Uses `http_get`, which retries a transient host failure (the
+        published host intermittently 500s) instead of killing the caller's first query.
+        """
+        resp = http_get(self._url(rel), self.settings)
         dest = self.settings.cache_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
         dest.write_bytes(resp.content)
         return json.loads(resp.content)  # type: ignore[no-any-return]
 
     def _download(self, rel: str, *, known_hash: str | None = None) -> Path:
-        """Fetch one artifact into the cache, hash-verified + cached (pooch)."""
+        """Fetch one artifact into the cache, hash-verified + cached (pooch, retried)."""
         base = resolve_base_url(self.settings)
         if base is None:  # pragma: no cover - guarded by is_remote before we get here
             raise RuntimeError("No index base URL configured.")
-        return fetch_file(base, rel, self.settings.cache_dir, known_hash=known_hash)
+        return fetch_file(
+            base,
+            rel,
+            self.settings.cache_dir,
+            known_hash=known_hash,
+            settings=self.settings,
+        )

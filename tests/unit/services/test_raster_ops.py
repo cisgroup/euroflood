@@ -211,6 +211,36 @@ def test_mosaic_and_crop_value_error_returns_false_and_closes(mocker, tmp_path):
     assert real_open
 
 
+def test_mosaic_and_crop_embeds_tags_and_leaves_no_temp(tmp_path):
+    """Optional tags land as embedded GeoTIFF metadata; the atomic .part is cleaned up."""
+    a = _float_tile(tmp_path / "a.tif", 10.0, 50.0, 11.0, 51.0)
+    out = tmp_path / "tagged.tif"
+    ok = RasterOps.mosaic_and_crop(
+        [a],
+        out,
+        box(10.2, 50.2, 10.8, 50.8),
+        nodata=-9999.0,
+        tags={"EUROFLOOD_SOURCE_TILES": "a.tif", "EUROFLOOD_N_SOURCE_TILES": "1"},
+    )
+    assert ok is True
+    assert not (tmp_path / "tagged.tif.part").exists()  # temp renamed away
+    with rasterio.open(out) as src:
+        assert src.tags()["EUROFLOOD_SOURCE_TILES"] == "a.tif"
+        assert src.tags()["EUROFLOOD_N_SOURCE_TILES"] == "1"
+
+
+def test_crop_raster_atomic_write_embeds_tags(sample_tif_path, tmp_path):
+    """crop_raster writes atomically (no leftover .part) and embeds provenance tags."""
+    out = tmp_path / "crop.tif"
+    ok = RasterOps.crop_raster(
+        sample_tif_path, out, box(10.02, 49.92, 10.08, 49.98), tags={"K": "v"}
+    )
+    assert ok is True
+    assert not (tmp_path / "crop.tif.part").exists()
+    with rasterio.open(out) as src:
+        assert src.tags()["K"] == "v"
+
+
 def test_mosaic_and_crop_no_nodata_writes_window(tmp_path):
     """nodata=None skips the polygon mask and the all-nodata check; data is written."""
     a = _float_tile(tmp_path / "a.tif", 10.0, 50.0, 11.0, 51.0, nodata=None)

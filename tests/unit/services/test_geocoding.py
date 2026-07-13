@@ -377,3 +377,13 @@ def test_repeated_local_geocode_reads_dataset_once(
     GeocodingService(settings=mock_settings).get_geometry("Köln")
     GeocodingService(settings=mock_settings).get_geometry("Deutschland", level=0)
     assert spy.call_count == 1  # per-instance rebuild is gone
+
+
+def test_offline_uncached_dataset_fails_closed(mock_settings, mock_requests_get):
+    """Offline place-name lookup with no cached NUTS dataset raises, never downloads."""
+    mock_settings.offline = True
+    mock_settings.boundary_dataset_path = None  # not cached, no override
+    svc = GeocodingService(settings=mock_settings)
+    with pytest.raises(GeocodingError, match="Offline"):
+        svc.get_geometry("Köln")
+    mock_requests_get.assert_not_called()  # never attempted the NUTS download

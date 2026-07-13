@@ -86,14 +86,36 @@ process from the local cache. The full EFAS archive is **~35 GB across ~3,280 ti
 streams them in row stripes so RAM stays bounded).
 
 ```bash
-euroflood mirror            # download-only: all tiles -> cache/downloads (resumable)
-euroflood mirror --verify   # re-download any cached file whose size != the JRC listing
-euroflood mirror --retry-failed   # re-attempt only the dead-letter list
+euroflood fetch-sources            # download-only: all tiles -> cache/downloads (resumable)
+euroflood fetch-sources --verify   # re-download any cached file whose size != the JRC listing
+euroflood fetch-sources --retry-failed   # re-attempt only the dead-letter list
 ```
 
-`mirror` is resumable (skips files already present), ledger-tracked (`mirror_*.jsonl`
-+ a `failed_mirror_*.json` dead-letter), and download-only. A subsequent `ingest`
-cache-hits every downloaded file and just processes it.
+`fetch-sources` (the producer bulk download, formerly `mirror`) is resumable (skips files
+already present), ledger-tracked (`mirror_*.jsonl` + a `failed_mirror_*.json` dead-letter),
+and download-only. A subsequent `ingest` cache-hits every downloaded file and just processes
+it. (For the *consumer* offline mirror — staging a published region for offline use — see
+`euroflood mirror` / `verify` below.)
+
+### Offline consumer mirror (compute nodes)
+
+To run `floods()`/`hazard()` on an offline node, stage the layers you need on a networked
+node, then flip the compute node offline:
+
+```bash
+# networked login node — stage a region (index + flood depths + hazard tiles):
+euroflood mirror all --bbox 6.1 52.0 6.3 52.2 -r 100
+euroflood verify all --bbox 6.1 52.0 6.3 52.2 -r 100 --deep   # readiness gate
+
+# compute node with no egress:
+EUROFLOOD_OFFLINE=1 euroflood hazard --bbox 6.1 52.0 6.3 52.2 -r 100 --download --out out/
+```
+
+`mirror index|floods|hazard|all` write a sha256+size ledger; `verify …` (add `--deep` to
+re-hash) reports present/missing/corrupt. `EUROFLOOD_OFFLINE=1` forces both collections
+cache-only; a missing tile raises a clear error naming the exact `mirror` command to run.
+Run the consumer mirror as a single process (the ledger is a read-modify-write JSON); to
+parallelise across regions, give each a distinct `EUROFLOOD_CACHE_DIR` and merge afterward.
 
 ## 2. Ingest (process tiles → Parquet)
 

@@ -21,6 +21,8 @@ import structlog
 
 from .._progress import file_progress
 from ..config import Settings, get_settings
+from ..core.manifest import file_record
+from ..exceptions import HazardError
 from ..services.downloader import DownloadService
 from ..services.hazard_tiles import (
     SUPPORTED_RETURN_PERIODS,
@@ -28,8 +30,19 @@ from ..services.hazard_tiles import (
     HazardTileIndex,
 )
 from ..services.location import LocationResolver
+from ..services.mirror_ledger import (
+    MirrorReport,
+    MirrorResult,
+    ledger_size,
+    load_ledger,
+    update_ledger,
+    verify_against_ledger,
+)
 from ..services.raster_ops import RasterOps, area_km2, nonempty_file, roi_key
 from .discovery import FloodFrame, _frame_roi_key, _make_frame
+
+# Rough per-tile size for a dry-run estimate when the ledger has no record yet.
+_HAZARD_TILE_BYTES_EST = 1_350_000
 
 logger = structlog.get_logger(__name__)
 
@@ -64,11 +77,51 @@ def _make_hazard_frame(rows: list[dict[str, Any]], settings: Settings) -> FloodF
     return _make_frame(rows, settings, columns=HAZARD_CATALOGUE_COLUMNS)
 
 
+def _tiles_bounds(
+    tiles: list[HazardTile],
+) -> tuple[float, float, float, float] | None:
+    """Union bbox of a tile list (for an offline remediation hint)."""
+    if not tiles:
+        return None
+    xs: list[float] = []
+    ys: list[float] = []
+    for t in tiles:
+        minx, miny, maxx, maxy = t.geometry.bounds
+        xs += [minx, maxx]
+        ys += [miny, maxy]
+    return (min(xs), min(ys), max(xs), max(ys))
+
+
+def _offline_switch(settings: Settings) -> tuple[str, str]:
+    """Name the active offline switch and the remedy to disable it (for messages)."""
+    if settings.offline:
+        return "EUROFLOOD_OFFLINE", "unset offline (EUROFLOOD_OFFLINE=0)"
+    return "hazard_mode='local'", "set hazard_mode='auto'"
+
+
+def _offline_tiles_message(
+    missing: list[str], tiles: list[HazardTile], roi: Any, settings: Settings
+) -> str:
+    """A remediable error for missing tiles when hazard is offline."""
+    bounds = roi.bounds if roi is not None else _tiles_bounds(tiles)
+    bbox = " ".join(f"{v:.4g}" for v in bounds) if bounds else "<lon0 lat0 lon1 lat1>"
+    rp_flags = " ".join(f"-r {rp}" for rp in sorted({t.return_period for t in tiles}))
+    shown = ", ".join(missing[:4]) + (", ..." if len(missing) > 4 else "")
+    switch, remedy = _offline_switch(settings)
+    return (
+        f"hazard is offline ({switch}) but {len(missing)} required GLOFAS tile(s) are "
+        f"not cached ({shown}). Pre-download on a networked node:\n"
+        f"    euroflood mirror hazard --bbox {bbox} {rp_flags}\n"
+        f"then re-run offline, or {remedy} to allow JRC fetches."
+    )
+
+
 def _tile_sources(
     tiles: list[HazardTile],
     downloader: DownloadService,
     settings: Settings,
     *,
+    roi: Any = None,
     on_bytes: Callable[[int], None] | None = None,
 ) -> list[str]:
     """Resolve tiles to raster sources: cached local paths, or /vsicurl URLs.
@@ -76,7 +129,35 @@ def _tile_sources(
     When caching, the intersecting tiles are fetched concurrently (each is a
     distinct file, so the atomic-rename downloader is thread-safe) and reassembled
     in tile order.
+
+    Offline (``hazard_mode='local'`` or ``offline``): reads only the local tile
+    cache and never touches the network; a missing tile is a remediable
+    ``HazardError`` pointing at ``euroflood mirror hazard`` (``hazard_cache_tiles``
+    is ignored — ``/vsicurl`` would be a network read).
+
+    Otherwise fails closed: if any required tile cannot be fetched, a ``HazardError``
+    is raised rather than silently dropping it. Mosaicking only the tiles that
+    happened to succeed would otherwise yield a hazard raster covering just part of
+    the ROI — returned with no error and a valid-looking GeoTIFF — which silently
+    corrupts any ROI spanning more than one GLOFAS tile whenever a single (often
+    transient) tile fetch fails. ``DownloadService`` already retries each tile with
+    exponential backoff, so a raise here means the tile is persistently unavailable.
     """
+    if settings.offline_hazard:
+        tiles_dir = settings.get_hazard_tiles_dir()
+        resolved: list[str] = []
+        missing_local: list[str] = []
+        for t in tiles:
+            p = tiles_dir / t.filename
+            if nonempty_file(p):
+                resolved.append(str(p))
+            else:
+                missing_local.append(t.filename)
+        if missing_local:
+            raise HazardError(
+                _offline_tiles_message(missing_local, tiles, roi, settings)
+            )
+        return resolved
     if not settings.hazard_cache_tiles:
         return [f"/vsicurl/{t.download_url}" for t in tiles]
     if not tiles:
@@ -92,6 +173,14 @@ def _tile_sources(
         }
         for future in as_completed(futures):
             fetched[futures[future]] = future.result()
+    missing = [t.filename for t, p in zip(tiles, fetched, strict=False) if p is None]
+    if missing:
+        raise HazardError(
+            f"Incomplete hazard tile set: {len(missing)} of {len(tiles)} tiles "
+            f"failed to download ({', '.join(missing)}). Refusing to build a "
+            "truncated hazard raster for the ROI — retry (JRC tile fetches can fail "
+            "transiently) or set hazard_cache_tiles=False to stream via /vsicurl."
+        )
     return [str(p) for p in fetched if p is not None]
 
 
@@ -102,7 +191,10 @@ class HazardPipeline:
         """Build the resolver and tile index."""
         self.settings = settings or get_settings()
         self.resolver = LocationResolver(settings=self.settings)
-        self.tile_index = HazardTileIndex(settings=self.settings)
+        self.tile_index = HazardTileIndex(
+            settings=self.settings,
+            allow_download=not self.settings.offline_hazard,
+        )
 
     def query(
         self,
@@ -225,7 +317,11 @@ def download_hazard_catalogue(
     downloader = DownloadService(
         download_dir=settings.get_hazard_tiles_dir(), settings=settings
     )
-    index = HazardTileIndex(settings=settings, downloader=downloader)
+    index = HazardTileIndex(
+        settings=settings,
+        downloader=downloader,
+        allow_download=not settings.offline_hazard,
+    )
     key = _frame_roi_key(catalogue)  # every row shares one ROI; hash it once
 
     # Partition rows into cache hits (recorded as-is) and per-return-period work,
@@ -245,18 +341,49 @@ def download_hazard_catalogue(
 
     # Rows stay sequential (each mosaic is a barrier), but the intersecting tiles of
     # each row are fetched concurrently inside ``_tile_sources`` (the download cost).
+    incomplete: list[int] = []  # return periods whose tile set could not be completed
     with file_progress(
         len(work), enabled=on_bytes is None, description="Downloading hazard maps"
     ) as advance:
         for pos, rp, roi, out_path in work:
             tiles = index.tiles_for(roi, rp)  # re-resolve URLs/filenames from the ROI
-            sources = _tile_sources(tiles, downloader, settings, on_bytes=on_bytes)
+            try:
+                # Fails closed on a partial tile set (see `_tile_sources`), so a
+                # written mosaic is always built from the full set of tiles.
+                sources = _tile_sources(
+                    tiles, downloader, settings, roi=roi, on_bytes=on_bytes
+                )
+            except HazardError:
+                # Offline: the missing-tile error is definitive (not a transient
+                # fetch failure), so propagate its `mirror hazard` remediation as-is
+                # instead of treating it as a skippable partial-tile set.
+                if settings.offline_hazard:
+                    raise
+                # Online per-return-period fail-closed: skip this RP (write nothing —
+                # an absent raster is honest and is not the silent truncation of #25)
+                # rather than aborting the whole sweep, so a transient failure on one
+                # RP does not discard the complete sibling RPs. A total failure is
+                # still surfaced loudly after the loop.
+                logger.warning("hazard_incomplete_tiles", return_period=rp)
+                incomplete.append(rp)
+                advance(1)
+                continue
             if not sources:
                 logger.warning("hazard_no_tiles_available", return_period=rp)
                 advance(1)
                 continue
+            tile_names = sorted(t.filename for t in tiles)
             if RasterOps.mosaic_and_crop(
-                sources, out_path, roi, nodata=HAZARD_NODATA, crop_to_poly=crop
+                sources,
+                out_path,
+                roi,
+                nodata=HAZARD_NODATA,
+                crop_to_poly=crop,
+                tags={
+                    "EUROFLOOD_RETURN_PERIOD": str(rp),
+                    "EUROFLOOD_N_SOURCE_TILES": str(len(tile_names)),
+                    "EUROFLOOD_SOURCE_TILES": ",".join(tile_names),
+                },
             ):
                 results[pos] = out_path
                 logger.info(
@@ -264,54 +391,269 @@ def download_hazard_catalogue(
                 )
             advance(1)
 
+    # Fail loudly only when tile failures left nothing usable at all (e.g. a single
+    # return period whose tiles were unavailable), so a wholly-failed request can
+    # never be mistaken for "no hazard here". A partial success returns what
+    # completed; the skipped return periods were warned above.
+    if incomplete and not results:
+        raise HazardError(
+            "No hazard rasters could be produced: every requested return period had "
+            f"an incomplete tile set ({', '.join(f'RP{rp}' for rp in incomplete)}). "
+            "Retry — JRC tile fetches can fail transiently — or set "
+            "hazard_cache_tiles=False to stream tiles via /vsicurl."
+        )
     return [results[pos] for pos in ordered if pos in results]
 
 
-def mirror_hazard(
-    return_period: int | list[int] | None = None,
+def _resolve_hazard_roi(
+    resolver: LocationResolver,
+    region: Any,
     *,
-    settings: Settings | None = None,
-) -> int:
-    """Download every GLOFAS tile for the given return period(s) into the cache.
+    point: tuple[float, float] | None,
+    radius_m: float,
+    bbox: tuple[float, float, float, float] | None,
+    shapefile: str | Path | None,
+    buffer_m: float,
+    level: int | None,
+    shape: str,
+) -> Any:
+    """Resolve the ROI args to a geometry, or ``None`` when none were given (all tiles)."""
+    if region is None and point is None and bbox is None and shapefile is None:
+        return None
+    return resolver.resolve(
+        region,
+        point=point,
+        radius_m=radius_m,
+        bbox=bbox,
+        shapefile=shapefile,
+        buffer_m=buffer_m,
+        level=level,
+        shape=shape,
+    )
 
-    A bulk "download everything once" for fast local/offline access: it
-    pre-populates ``settings.get_hazard_tiles_dir()`` so subsequent
-    ``hazard(...).download()`` runs fully offline (cache hits skip re-downloads).
-    Roughly 1.3 MB x 271 tiles x number of return periods (~350 MB per RP).
+
+def _expected_hazard_tiles(
+    index: HazardTileIndex, roi: Any, rps: list[int]
+) -> dict[str, HazardTile]:
+    """The set of tiles (deduped by filename) needed for ``rps`` over ``roi``.
+
+    Region-scoped (``tiles_for``) when an ROI is given, else every tile (``all_tiles``).
+    """
+    expected: dict[str, HazardTile] = {}
+    for rp in rps:
+        tiles = index.tiles_for(roi, rp) if roi is not None else index.all_tiles(rp)
+        for t in tiles:
+            expected[t.filename] = t
+    return expected
+
+
+def mirror_hazard(
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    return_period: int | list[int] | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    dry_run: bool = False,
+    settings: Settings | None = None,
+) -> MirrorResult:
+    """Mirror GLOFAS hazard tiles into the cache for offline/HPC use.
+
+    Region-scoped when an ROI is given (only the intersecting tiles — the
+    HPC-friendly footprint), else every tile globally (~350 MB per return period).
+    Records a per-tile sha256+size ledger in ``hazard_manifest.json`` (accumulating
+    across incremental region mirrors), passes each tile's ledgered size as
+    ``expected_size`` so a corrupt cached tile is re-fetched, and leaves the cache so
+    a later ``hazard(...).download()`` runs fully offline.
+
+    This is the *populate* action, so it is network-permitted regardless of
+    ``hazard_mode``. It does **not** fail closed on a partial download (a bulk mirror
+    is idempotent/resumable) — failures are surfaced via ``result.missing``.
 
     Args:
+        region: ROI selection (place / geometry / bbox tuple), as `hazard`. Omit
+            every ROI argument to mirror all tiles globally.
+        point: A (lat, lon) point; combine with ``radius_m``.
+        radius_m: Radius in metres around ``point``.
+        bbox: A (minx, miny, maxx, maxy) bounding box (WGS84).
+        shapefile: Path to a vector file used as the ROI.
+        buffer_m: Optional extra metric buffer around the ROI.
+        level: Optional NUTS level filter for place-name resolution.
+        shape: ROI shape — ``"exact"``/``"bbox"``/``"hull"`` (see `hazard`).
         return_period: Return period(s) to mirror. ``None`` mirrors all supported.
+        dry_run: Resolve the tile set and report the plan without downloading.
         settings: Optional configuration. Defaults to `get_settings`.
 
     Returns:
-        int: The number of tiles available locally after the run.
+        MirrorResult: an ``int`` (tiles downloaded) carrying ``.n_expected``,
+        ``.bytes_total``, ``.missing``, and ``.ledger_path``.
     """
     settings = settings or get_settings()
     rps = _normalize_return_periods(return_period)
-    index = HazardTileIndex(settings=settings)
+    resolver = LocationResolver(settings=settings)
+    roi = _resolve_hazard_roi(
+        resolver,
+        region,
+        point=point,
+        radius_m=radius_m,
+        bbox=bbox,
+        shapefile=shapefile,
+        buffer_m=buffer_m,
+        level=level,
+        shape=shape,
+    )
+    # The mirror populates the cache, so it is always network-permitted.
+    index = HazardTileIndex(settings=settings, allow_download=True)
     downloader = DownloadService(
         download_dir=settings.get_hazard_tiles_dir(), settings=settings
     )
+    ledger_path = settings.get_hazard_manifest_path()
+    ledger = load_ledger(ledger_path)
+    expected = _expected_hazard_tiles(index, roi, rps)
+    tiles_dir = settings.get_hazard_tiles_dir()
+    n_expected = len(expected)
 
-    total = 0
-    for rp in rps:
-        tiles = index.all_tiles(rp)  # validates rp
-        logger.info("mirror_hazard_start", return_period=rp, tiles=len(tiles))
-        count = 0
-        with ThreadPoolExecutor(max_workers=settings.max_workers_dl) as pool:
-            futures = [
-                pool.submit(downloader.download_file, t.download_url, t.filename)
-                for t in tiles
-            ]
-            for future in as_completed(futures):
-                if future.result() is not None:
-                    count += 1
+    if dry_run:
+        missing = sorted(fn for fn in expected if not nonempty_file(tiles_dir / fn))
+        est = sum(ledger_size(ledger, fn) or _HAZARD_TILE_BYTES_EST for fn in missing)
         logger.info(
-            "mirror_hazard_rp_done", return_period=rp, downloaded=count, of=len(tiles)
+            "hazard_mirror_plan", tiles=n_expected, to_download=len(missing), bytes=est
         )
-        total += count
-    logger.info("mirror_hazard_complete", total=total)
-    return total
+        return MirrorResult(
+            0,
+            n_expected=n_expected,
+            bytes_total=est,
+            missing=missing,
+            ledger_path=ledger_path,
+        )
+
+    if not expected:
+        logger.info("hazard_mirror_empty_roi")
+        return MirrorResult(0, n_expected=0, ledger_path=ledger_path)
+
+    tiles_dir.mkdir(parents=True, exist_ok=True)
+    # A model_version bump silently changes tile content at the same URL: evict the
+    # stale cached tiles so download_file re-fetches (a cache hit would otherwise serve
+    # old content, and re-hashing it would falsely certify it as current).
+    if ledger.get("model_version") not in (None, settings.hazard_model_version):
+        for fn in expected:
+            (tiles_dir / fn).unlink(missing_ok=True)
+    items = list(expected.items())
+    results: dict[str, Path | None] = {}
+    with (
+        file_progress(
+            len(items), enabled=True, description="Mirroring hazard tiles"
+        ) as advance,
+        ThreadPoolExecutor(
+            max_workers=min(len(items), settings.max_workers_dl)
+        ) as pool,
+    ):
+        futures = {
+            pool.submit(
+                downloader.download_file,
+                t.download_url,
+                t.filename,
+                expected_size=ledger_size(ledger, fn),
+            ): fn
+            for fn, t in items
+        }
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+            advance(1)
+
+    records: dict[str, dict[str, Any]] = {}
+    for fn, p in results.items():
+        if p is not None and p.exists():  # guard: mocks may return a phantom path
+            records[fn] = {
+                **file_record(p),
+                "return_period": expected[fn].return_period,
+                "tile_id": expected[fn].tile_id,
+            }
+    downloaded = sum(1 for p in results.values() if p is not None)
+    missing = sorted(fn for fn, p in results.items() if p is None)
+    region_meta = {
+        "bbox": list(roi.bounds) if roi is not None else None,
+        "return_periods": rps,
+        "n_tiles": n_expected,
+    }
+    update_ledger(
+        ledger_path,
+        records,
+        region_meta=region_meta,
+        model_version=settings.hazard_model_version,
+    )
+    logger.info(
+        "mirror_hazard_complete",
+        downloaded=downloaded,
+        of=n_expected,
+        missing=len(missing),
+    )
+    return MirrorResult(
+        downloaded,
+        n_expected=n_expected,
+        bytes_total=sum(r["size_bytes"] for r in records.values()),
+        missing=missing,
+        ledger_path=ledger_path,
+    )
+
+
+def verify_hazard_mirror(
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    return_period: int | list[int] | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    deep: bool = False,
+    settings: Settings | None = None,
+) -> MirrorReport:
+    """Report local hazard-mirror readiness for a region: present/missing/corrupt.
+
+    Resolves the expected tile set (region-scoped, or all), then checks each tile on
+    disk against the ``hazard_manifest.json`` ledger (``deep`` re-hashes sha256).
+    """
+    settings = settings or get_settings()
+    rps = _normalize_return_periods(return_period)
+    resolver = LocationResolver(settings=settings)
+    roi = _resolve_hazard_roi(
+        resolver,
+        region,
+        point=point,
+        radius_m=radius_m,
+        bbox=bbox,
+        shapefile=shapefile,
+        buffer_m=buffer_m,
+        level=level,
+        shape=shape,
+    )
+    # Verify may run offline; the tile index must already be cached.
+    index = HazardTileIndex(
+        settings=settings, allow_download=not settings.offline_hazard
+    )
+    expected = _expected_hazard_tiles(index, roi, rps)
+    ledger_path = settings.get_hazard_manifest_path()
+    tiles = list(expected.values())
+    bounds = roi.bounds if roi is not None else _tiles_bounds(tiles)
+    bbox_str = " ".join(f"{v:.4g}" for v in bounds) if bounds else ""
+    rp_flags = " ".join(f"-r {rp}" for rp in rps)
+    report = verify_against_ledger(
+        sorted(expected),
+        settings.get_hazard_tiles_dir(),
+        load_ledger(ledger_path),
+        collection="hazard",
+        deep=deep,
+        remediation_cmd=f"euroflood mirror hazard --bbox {bbox_str} {rp_flags}".strip(),
+    )
+    report.ledger_path = ledger_path
+    return report
 
 
 def build_hazard_manifest(settings: Settings | None = None) -> Path:
@@ -330,6 +672,10 @@ def build_hazard_manifest(settings: Settings | None = None) -> Path:
     gdf = index._load()  # downloads + caches tile_extents.geojson on first use
     tile_path = settings.get_hazard_index_path()
 
+    out = settings.get_hazard_manifest_path()
+    # Preserve any local mirror ledger already in the file — authoring the citable
+    # provenance must never wipe the record of mirrored tiles.
+    existing = json.loads(out.read_text()) if out.exists() else {}
     doc = {
         "index_schema_version": INDEX_SCHEMA_VERSION,
         "collection": "hazard",
@@ -348,7 +694,8 @@ def build_hazard_manifest(settings: Settings | None = None) -> Path:
             "zenodo_doi": None,
         },
     }
-    out = settings.get_hazard_manifest_path()
+    if "mirror" in existing:
+        doc["mirror"] = existing["mirror"]
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(doc, indent=2))
     logger.info("hazard_manifest_written", path=str(out), n_tiles=len(gdf))
@@ -361,4 +708,5 @@ __all__ = [
     "build_hazard_manifest",
     "download_hazard_catalogue",
     "mirror_hazard",
+    "verify_hazard_mirror",
 ]

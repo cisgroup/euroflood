@@ -168,7 +168,7 @@ class GeocodingService:
                 boundary dataset on first use.
         """
         self.settings = settings or get_settings()
-        self.backend = self.settings.geocoder_backend
+        self.backend = self.settings.effective_geocoder_backend
         self._downloader = downloader or DownloadService(
             download_dir=self.settings.cache_dir / "boundaries",
             settings=self.settings,
@@ -272,6 +272,13 @@ class GeocodingService:
         dest = self.settings.cache_dir / "boundaries" / filename
         if dest.exists():
             return dest
+        if self.settings.offline:
+            raise GeocodingError(
+                "Offline (EUROFLOOD_OFFLINE) but the NUTS boundary dataset needed for "
+                "place-name lookup is not cached. Resolve a place name once while online "
+                "to cache it, set EUROFLOOD_BOUNDARY_DATASET_PATH to a local file, or "
+                "select the region by bbox/point instead of a name."
+            )
         logger.info("boundary_dataset_download", url=self.settings.boundary_dataset_url)
         path = self._downloader.download_file(
             self.settings.boundary_dataset_url, filename

@@ -111,6 +111,10 @@ def mock_settings(tmp_path):
     # Reset GLOFAS hazard fields for the same reason.
     settings.hazard_index_path = None
     settings.hazard_cache_tiles = True
+    # Default to "auto" (NOT "local"): the offline gate would otherwise refuse the
+    # mocked, not-actually-on-disk tile downloads across the whole hazard suite.
+    settings.hazard_mode = "auto"
+    settings.offline = False
 
     # Reset the cached-download auto-detect (tests may toggle it).
     settings.autodetect_downloads = True

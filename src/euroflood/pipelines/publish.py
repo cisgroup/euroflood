@@ -109,21 +109,42 @@ def build_zenodo_metadata(version: str) -> dict[str, Any]:
     }
 
 
-def build_readme(version: str, *, base_url: str) -> str:
+def build_readme(
+    version: str, *, base_url: str, zenodo_concept_doi: str | None = None
+) -> str:
     """The dataset/product card (``README.md``) shipped with the bundle.
 
     One maintained source (``product_readme.md``), used by both the Source Cooperative
     product landing page and the Zenodo record. ``base_url`` is the version-pinned
     live-host prefix so the direct-access examples are copy-pasteable.
+    ``zenodo_concept_doi`` (once the index is on Zenodo) adds a "cite" line pointing at
+    the concept DOI; omitted before the DOI exists.
     """
     template = (
         resources.files("euroflood.pipelines")
         .joinpath("product_readme.md")
         .read_text(encoding="utf-8")
     )
-    return template.replace("__VERSION__", version.lstrip("v")).replace(
-        "__BASE_URL__", base_url
+    doi_line = (
+        f"- **Cite:** [{zenodo_concept_doi}](https://doi.org/{zenodo_concept_doi}) "
+        "— the citable Zenodo archive (all versions)"
+        if zenodo_concept_doi
+        else ""
     )
+    return (
+        template.replace("__VERSION__", version.lstrip("v"))
+        .replace("__BASE_URL__", base_url)
+        .replace("__ZENODO_DOI_LINE__", doi_line)
+    )
+
+
+def _zenodo_concept_doi(manifest_path: Path) -> str | None:
+    """The concept DOI stamped in the manifest (once the index is on Zenodo), else None."""
+    try:
+        data = json.loads(manifest_path.read_text())
+    except (OSError, json.JSONDecodeError):
+        return None
+    return (data.get("source_urls") or {}).get("zenodo_concept_doi")
 
 
 def gather_bundle_files(settings: Settings) -> list[Path]:
@@ -170,18 +191,22 @@ def publish_to_zenodo(
     stamp_manifest(manifest_path, index_version=version)
     base_url = settings.source_coop_base_url(version)
     (settings.cache_dir / "README.md").write_text(
-        build_readme(version, base_url=base_url)
+        build_readme(
+            version,
+            base_url=base_url,
+            zenodo_concept_doi=_zenodo_concept_doi(manifest_path),
+        )
     )
     files = [*gather_bundle_files(settings), settings.cache_dir / "README.md"]
     metadata = build_zenodo_metadata(version)
     result = ZenodoPublisher(token, sandbox=sandbox).create_and_publish(files, metadata)
     # Record the minted DOI back into the local manifest (and any future re-upload).
+    # stamp_manifest merges source_urls, so a prior source_coop URL is preserved.
     stamp_manifest(
         manifest_path,
         source_urls={
             "zenodo_doi": result["doi"],
             "zenodo_concept_doi": result["concept_doi"],
-            "source_coop": None,  # filled when the live host is wired
         },
     )
     logger.info("zenodo_published", version=version, doi=result["doi"])
@@ -240,7 +265,13 @@ def publish_to_source_coop(
         manifest_path, index_version=version, source_urls={"source_coop": base_url}
     )
     readme = settings.cache_dir / "README.md"
-    readme.write_text(build_readme(version, base_url=base_url))
+    readme.write_text(
+        build_readme(
+            version,
+            base_url=base_url,
+            zenodo_concept_doi=_zenodo_concept_doi(manifest_path),
+        )
+    )
     # The product-card hero is shipped as package data; stage + upload it into the version
     # prefix so the card (served at the repo root) can reference a public URL that doesn't
     # depend on the GitHub repo being public: {base_url}/hero.png.

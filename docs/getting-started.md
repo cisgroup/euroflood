@@ -71,13 +71,28 @@ haz.stats()
 
 ## Offline & HPC
 
-Everything above streams the index. For fully offline / cluster use, mirror the full
-**~130 MB** bundle once, then read it locally:
+Everything above streams data on demand. For a fully offline / cluster node, **mirror
+the layers you need once** (on a machine with internet), then flip the node offline:
 
 ```bash
-export EUROFLOOD_GEOCODER_BACKEND=local   # resolve names from the offline NUTS dataset
-euroflood mirror-index                    # pull the whole bundle, then query with no network
+# On a networked login node — stage a study region for offline use:
+euroflood mirror all --bbox 6.1 52.0 6.3 52.2 -r 100   # index + flood depths + hazard tiles
+euroflood verify all --bbox 6.1 52.0 6.3 52.2 -r 100 --deep   # readiness gate (checksums)
+
+# On the offline compute node — one switch forces everything cache-only:
+export EUROFLOOD_OFFLINE=1
+euroflood floods --bbox 6.1 52.0 6.3 52.2 --download --out out/
+euroflood hazard --bbox 6.1 52.0 6.3 52.2 -r 100 --download --out out/
 ```
+
+`mirror` stages any layer independently — `mirror index` (the flood catalogue, so
+`floods()` **queries** run offline), `mirror floods --bbox …` (the flood **depth maps**
+for a region), `mirror hazard --bbox …` (GLOFAS **hazard tiles** for a region), or
+`mirror all` for everything. `verify` reports what is present / missing / corrupt (`--deep`
+re-checks sha256). `EUROFLOOD_OFFLINE=1` (or `euroflood.offline()` in Python) forces both
+collections cache-only and the geocoder to the offline NUTS backend; a missing tile then
+raises a clear error naming the exact `mirror` command to run — never a silent partial
+result. In Python: `ef.mirror("hazard", bbox=(6.1, 52.0, 6.3, 52.2), return_period=100)`.
 
 ## Next steps
 

@@ -96,16 +96,58 @@ def test_publish_stamps_manifest_with_doi(built_index, mocker, monkeypatch):
     fake.assert_called_once_with("tok", sandbox=True)
 
 
+def test_zenodo_publish_preserves_existing_source_coop_url(
+    built_index, mocker, monkeypatch
+):
+    """Publishing to Zenodo must not wipe an existing source_coop URL in the manifest."""
+    from euroflood.core.manifest import stamp_manifest
+
+    mp = built_index.settings.get_manifest_path()
+    stamp_manifest(
+        mp, source_urls={"source_coop": "https://data.source.coop/x/y/v1.0.0"}
+    )
+    monkeypatch.setenv("ZENODO_SANDBOX_TOKEN", "tok")
+    fake = mocker.patch("euroflood.pipelines.publish.ZenodoPublisher")
+    fake.return_value.create_and_publish.return_value = {
+        "doi": "10.5072/zenodo.42",
+        "concept_doi": "10.5072/zenodo.41",
+        "record_url": "https://sandbox.zenodo.org/record/42",
+        "deposition_id": 42,
+    }
+    pub.publish_to_zenodo(
+        built_index.settings,
+        version="v1.0.0",
+        sandbox=True,
+        dotenv=built_index.settings.cache_dir / "none",
+    )
+    urls = json.loads(mp.read_text())["source_urls"]
+    assert urls["source_coop"] == "https://data.source.coop/x/y/v1.0.0"  # preserved
+    assert urls["zenodo_doi"] == "10.5072/zenodo.42"  # + new DOI merged in
+
+
 # --- Source Cooperative publishing ------------------------------------------
 def test_build_readme_fills_placeholders():
     base = "https://data.source.coop/hackl/euroflood-index/v1.0.0"
     md = pub.build_readme("1.0.0", base_url=base)
     assert "__VERSION__" not in md and "__BASE_URL__" not in md
+    assert "__ZENODO_DOI_LINE__" not in md  # placeholder always substituted
     assert "v1.0.0/" in md
     assert base in md
     # the product-card hero references the public, version-pinned URL
     assert f"{base}/hero.png" in md
     assert "CC-BY-4.0" in md
+    # No DOI passed -> no cite line.
+    assert "doi.org" not in md
+
+
+def test_build_readme_includes_zenodo_doi_when_given():
+    base = "https://data.source.coop/hackl/euroflood-index/v1.0.0"
+    md = pub.build_readme(
+        "1.0.0", base_url=base, zenodo_concept_doi="10.5281/zenodo.42"
+    )
+    assert "__ZENODO_DOI_LINE__" not in md
+    assert "https://doi.org/10.5281/zenodo.42" in md
+    assert "Cite" in md
 
 
 def test_source_coop_dry_run_is_read_only(built_index):

@@ -29,7 +29,7 @@ uv sync                                                    # ONLINE: warms cache
 uv run python -c "import euroflood; print('euroflood ok')"
 
 # Scrape the inventory + download ALL source tiles (~35 GB), verifying sizes.
-uv run euroflood mirror --update --verify
+uv run euroflood fetch-sources --update --verify
 
 echo "Mirror complete -> $EUROFLOOD_CACHE_DIR/downloads"
 echo "Next: submit the offline compute jobs (della_ingest.sbatch, then della_build_index.sbatch)."

@@ -26,9 +26,23 @@ The object these return is a [`FloodFrame`](floodframe.md).
       show_root_heading: true
       heading_level: 3
 
-## Mirror hazard tiles
+## Mirror data for offline use
 
-::: euroflood.api.mirror_hazard
+::: euroflood.api.mirror
+    options:
+      show_root_heading: true
+      heading_level: 3
+
+## Verify a local mirror
+
+::: euroflood.api.verify
+    options:
+      show_root_heading: true
+      heading_level: 3
+
+## Toggle offline mode
+
+::: euroflood.api.offline
     options:
       show_root_heading: true
       heading_level: 3

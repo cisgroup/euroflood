@@ -1,6 +1,6 @@
 [project]
 name = "euroflood"
-version = "0.1.0"
+version = "0.2.0"
 description = "Processing toolkit for European Satellite-Derived Flood Depth Maps (JRC/CEMS-EFAS): ingest, index, and extract flood data."
 authors = [
     {name = "Jürgen Hackl", email = "hackl@princeton.edu"}

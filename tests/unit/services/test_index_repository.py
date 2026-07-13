@@ -90,7 +90,7 @@ def _mock_remote(mocker, manifest):
     )
     calls: list[tuple[str, str | None]] = []
 
-    def fake_fetch(base, rel, dest_dir, *, known_hash):
+    def fake_fetch(base, rel, dest_dir, *, known_hash, settings=None):
         calls.append((rel, known_hash))
         dest = dest_dir / rel
         dest.parent.mkdir(parents=True, exist_ok=True)
@@ -170,3 +170,39 @@ def test_open_index_reopens_a_closed_dataset(mock_settings, mocker):
 
     repo.open_index()  # caches `closed` (which reports .closed == True)
     assert repo.open_index() is fresh  # stale handle -> re-open
+
+
+def test_ensure_tables_survives_a_transient_500(mock_settings, mocker):
+    """The published host can 500 intermittently; the first query must not die (it did).
+
+    Reproduces the live-tutorial failure: `ensure_tables` -> `_fetch_json` ->
+    manifest.json returned 500 and raised straight out. It is now retried.
+    """
+    import requests
+
+    mocker.patch("time.sleep")  # skip tenacity's backoff
+    mock_settings.index_mode = "remote"
+    mock_settings.index_base_url = "https://host/idx"
+    mock_settings.retries = 3
+
+    def _resp(status, content=b"{}"):
+        r = requests.Response()
+        r.status_code = status
+        r._content = content
+        r.url = "https://host/idx/manifest.json"
+        return r
+
+    manifest = json.dumps({"files": {"events.parquet": {"sha256": "abc"}}}).encode()
+    get = mocker.patch(
+        "euroflood._data.requests.get",
+        side_effect=[_resp(500), _resp(200, manifest)],  # one hiccup, then OK
+    )
+    dl = mocker.patch(
+        "euroflood.services.index_repository.fetch_file",
+        return_value=mock_settings.cache_dir / "events.parquet",
+    )
+
+    IndexRepository(settings=mock_settings).ensure_tables()
+
+    assert get.call_count == 2  # the 500 was retried, not fatal
+    dl.assert_called_once()  # and the table fetch proceeded

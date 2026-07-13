@@ -70,8 +70,8 @@ ef.settings.output_dir
 #
 # ```bash
 # export EUROFLOOD_GEOCODER_BACKEND=local   # resolve names from the offline NUTS dataset
-# export EUROFLOOD_INDEX_MODE=local         # only ever read a local index copy
-# euroflood mirror-index                    # pull the whole ~130 MB bundle once
+# export EUROFLOOD_OFFLINE=1                 # both collections cache-only, geocoder offline
+# euroflood mirror all --bbox 6.1 52 6.3 52.2 -r 100   # stage a region for offline use
 # ```
 #
 # …or pass a `bbox=` / `point=` to skip geocoding, and `EUROFLOOD_SHOW_PROGRESS=0` to silence

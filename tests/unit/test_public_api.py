@@ -22,7 +22,15 @@ def test_unknown_attribute_raises_attributeerror():
 
 
 def test_headline_functions_present():
-    for name in ("floods", "hazard", "download", "mirror_hazard", "setup_logging"):
+    for name in (
+        "floods",
+        "hazard",
+        "download",
+        "mirror",
+        "verify",
+        "offline",
+        "setup_logging",
+    ):
         assert callable(getattr(ef, name))
 
 

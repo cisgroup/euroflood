@@ -48,8 +48,8 @@ jobs:
 
       - name: Tutorials (offline smoke)
         # Execute the cheap-path tutorials against the committed Cologne fixture with no
-        # network. The download/hazard tutorials (04, 05) need the live index -> nightly
-        # examples.yml. Absolute paths: nbmake runs each notebook with cwd = examples/.
+        # network. The download/hazard tutorials (04, 05) need the live index -> the monthly
+        # examples.yml (or an on-demand run). Absolute paths: nbmake runs each notebook with cwd = examples/.
         env:
           EUROFLOOD_CACHE_DIR: ${{ github.workspace }}/tests/fixtures/realdata/index
           EUROFLOOD_INDEX_MODE: local

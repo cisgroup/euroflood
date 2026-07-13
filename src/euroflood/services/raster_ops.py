@@ -4,7 +4,9 @@ This module provides static utility methods for spatial operations on raster fil
 wrapping `rasterio` and `shapely`.
 """
 
+import contextlib
 import hashlib
+import os
 from collections.abc import Sequence
 from functools import lru_cache
 from pathlib import Path
@@ -75,6 +77,39 @@ def _transformer(from_crs: Any, to_crs: Any) -> Transformer:
     memoizing on the (hashable) CRS objects avoids rebuilding it each time.
     """
     return Transformer.from_crs(from_crs, to_crs, always_xy=True)
+
+
+def _write_raster(
+    path: Path,
+    array: Any,
+    profile: dict[str, Any],
+    *,
+    tags: dict[str, str] | None = None,
+) -> None:
+    """Write ``array`` to ``path`` as a GeoTIFF — atomically, with optional tags.
+
+    Writes to a sibling ``.part`` file and renames it into place with
+    ``os.replace``, so an interrupted crop/mosaic can never leave a partial,
+    valid-looking raster that a later ``nonempty_file`` cache check would trust and
+    reuse. ``tags`` are stamped as dataset-level GeoTIFF metadata (embedded in the
+    file, no sidecar) — e.g. the set of source tiles a hazard mosaic was built from
+    — so the output's provenance is auditable.
+
+    The temp name is per-process-unique (``.<pid>.part``) so two processes cropping
+    the same cache key concurrently each rename their own file — the last writer
+    wins with a complete raster — instead of colliding on one shared temp.
+    """
+    tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
+    try:
+        with rasterio.open(tmp, "w", **profile) as dest:
+            dest.write(array)
+            if tags:
+                dest.update_tags(**tags)
+        os.replace(tmp, path)  # atomic within one filesystem
+    finally:
+        if tmp.exists():
+            with contextlib.suppress(OSError):
+                tmp.unlink()
 
 
 class RasterOps:
@@ -167,12 +202,15 @@ class RasterOps:
         output_path: Path,
         geometry: BaseGeometry,
         crop_to_poly: bool = True,
+        *,
+        tags: dict[str, str] | None = None,
     ) -> bool:
         """Crop a raster to a given geometry.
 
         This method reads a source raster, masks it using the provided geometry,
         and writes the result to a new file. It handles CRS mismatches by
-        reprojecting the geometry to match the raster's CRS.
+        reprojecting the geometry to match the raster's CRS. The write is atomic
+        (temp file + rename), so an interrupted crop cannot leave a partial output.
 
         Args:
             source_path (Path): Path to the input TIF file.
@@ -182,6 +220,7 @@ class RasterOps:
                 If True, sets pixels outside the polygon to NoData.
                 If False, crops to the bounding box of the geometry.
                 Defaults to True.
+            tags: Optional dataset-level GeoTIFF metadata to embed (provenance).
 
         Returns:
             bool: True if successful and data was written, False otherwise (e.g., no overlap or empty result).
@@ -225,9 +264,7 @@ class RasterOps:
                 profile.pop("blockxsize", None)
                 profile.pop("blockysize", None)
 
-                with rasterio.open(output_path, "w", **profile) as dest:
-                    dest.write(out_image)
-
+                _write_raster(output_path, out_image, profile, tags=tags)
                 return True
         except ValueError:
             # Usually means geometry doesn't overlap raster
@@ -241,6 +278,7 @@ class RasterOps:
         *,
         nodata: float | None = None,
         crop_to_poly: bool = True,
+        tags: dict[str, str] | None = None,
     ) -> bool:
         """Mosaic one or more rasters over an ROI window, then crop to a geometry.
 
@@ -258,6 +296,8 @@ class RasterOps:
             nodata: NoData value for merge/masking and the emptiness check.
             crop_to_poly: If True, set pixels outside the polygon to ``nodata``
                 (requires ``nodata``); otherwise keep the bbox-cropped mosaic.
+            tags: Optional dataset-level GeoTIFF metadata to embed (e.g. the source
+                tiles used), so a mosaic's provenance is auditable on disk.
 
         Returns:
             bool: True if non-empty data was written, False otherwise (no overlap
@@ -309,8 +349,7 @@ class RasterOps:
                 profile.pop("blockxsize", None)
                 profile.pop("blockysize", None)
 
-                with rasterio.open(output_path, "w", **profile) as dest:
-                    dest.write(mosaic)
+                _write_raster(output_path, mosaic, profile, tags=tags)
                 return True
         except ValueError:
             return False

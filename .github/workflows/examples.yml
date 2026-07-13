@@ -1,12 +1,17 @@
 name: Examples (live)
 
-# Nightly execution of ALL tutorials against the LIVE published index (network) — including
+# Monthly execution of ALL tutorials against the LIVE published index (network) — including
 # the download/hazard notebooks (04, 05) that the offline PR smoke in ci.yml can't cover.
 # Also runnable on demand. Mirrors the opt-in philosophy of the `online` test suite.
+#
+# Monthly (not nightly): this is a canary for the *hosted* data (Source Cooperative + the JRC
+# hazard endpoint), which drifts on the order of releases, not days — while both hosts hiccup
+# often enough that a daily run mostly reported their transient 5xx, not our regressions.
+# Run it on demand (workflow_dispatch) before a release or when touching the tutorials.
 
 on:
   schedule:
-    - cron: "17 5 * * *" # daily 05:17 UTC
+    - cron: "17 5 1 * *" # monthly: 05:17 UTC on the 1st
   workflow_dispatch:
 
 concurrency:

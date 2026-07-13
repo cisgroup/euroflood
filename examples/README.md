@@ -67,5 +67,6 @@ readable source of truth, paired to a `.ipynb` with rich outputs.
 The `.py` and `.ipynb` are kept in sync by the jupytext pre-commit hook (`jupytext --sync`).
 The cheap-path tutorials (01, 02, 03, 07) are executed offline against the committed
 `tests/fixtures/realdata/index/` bundle on every PR; the download-dependent ones (04, 05, 06)
-run in the nightly live workflow. See `.github/workflows/examples.yml`. Regenerate the docs
+run in the monthly live workflow (also runnable on demand via workflow_dispatch).
+See `.github/workflows/examples.yml`. Regenerate the docs
 hero/figure images + these thumbnails with `python scripts/make_doc_images.py`.

@@ -9,6 +9,8 @@ materializes the cropped GeoTIFFs for the selected rows.
 
 from __future__ import annotations
 
+import contextlib
+import json
 import math
 import shutil
 from collections.abc import Callable
@@ -23,16 +25,29 @@ import rasterio
 import rasterio.mask
 import structlog
 
+from .._data import resolve_base_url
 from .._progress import file_progress
 from ..config import Settings, get_settings
 from ..core.grid import GlobalGrid
-from ..core.manifest import validate_manifest
+from ..core.manifest import file_record, validate_manifest
+from ..exceptions import ProcessingError
 from ..services.dictionary_repository import DictionaryRepository
 from ..services.downloader import DownloadService
 from ..services.events_repository import EventsRepository
 from ..services.index_repository import _GDAL_ENV, IndexRepository
 from ..services.location import LocationResolver
+from ..services.mirror_ledger import (
+    MirrorReport,
+    MirrorResult,
+    ledger_size,
+    load_ledger,
+    update_ledger,
+    verify_against_ledger,
+)
 from ..services.raster_ops import RasterOps, is_hazard, nonempty_file, roi_key
+
+# Rough per-event source-raster size for a dry-run estimate (no ledger record yet).
+_FLOOD_TILE_BYTES_EST = 8_000_000
 
 logger = structlog.get_logger(__name__)
 
@@ -614,6 +629,28 @@ def download_catalogue(
             continue
         tasks.append((pos, url, filename, out_path, row.geometry))
 
+    # Offline (EUROFLOOD_OFFLINE / euroflood.offline()): the source rasters must
+    # already be in the download cache — never hit the network. A missing source is a
+    # remediable error pointing at `euroflood mirror floods` (cached sources fall
+    # through: the download below returns cache hits and crops them with no network).
+    if settings.offline_floods:
+        absent = sorted(
+            {
+                fn
+                for _, _, fn, _, _ in tasks
+                if not nonempty_file(downloader.download_dir / fn)
+            }
+        )
+        if absent:
+            shown = ", ".join(absent[:4]) + (", ..." if len(absent) > 4 else "")
+            raise ProcessingError(
+                f"floods is offline (EUROFLOOD_OFFLINE) but {len(absent)} flood depth "
+                f"map(s) are not cached ({shown}). Pre-download on a networked node "
+                "with `euroflood mirror floods --bbox <...>`, then re-run offline, or "
+                "unset offline (EUROFLOOD_OFFLINE=0 / euroflood.offline(False)) to allow "
+                "EFAS fetches."
+            )
+
     def _commit(pos: int, src_path: Path | None, out_path: Path, geom: Any) -> None:
         """Crop (or copy) a just-downloaded source into ``out_path`` — main thread."""
         if src_path is None:
@@ -694,3 +731,255 @@ def _dispatch_download(
         settings=settings,
         on_bytes=on_bytes,
     )
+
+
+def _ensure_local_index(settings: Settings) -> None:
+    """Make the flood index bundle local (COG + tables) so offline queries work.
+
+    Skips the network when the COG is already cached (the common HPC path: run
+    ``mirror index`` once, then ``mirror floods`` reuses it). Otherwise pulls the
+    published bundle if a base URL is configured; a genuinely unavailable index is
+    left for the query to report with its own clear error.
+    """
+    if settings.get_index_tif_path().exists():
+        return
+    if resolve_base_url(settings) is not None:
+        IndexRepository(settings=settings).mirror(include_cog=True)
+
+
+def _query_events(
+    settings: Settings, region: Any, roi_kwargs: dict[str, Any]
+) -> FloodFrame:
+    """Resolve the ROI's flood catalogue (one row per event) for mirror/verify."""
+    return DiscoveryPipeline(settings=settings).query(region, **roi_kwargs)
+
+
+def mirror_floods(
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    year: int | None = None,
+    start: str | int | None = None,
+    end: str | int | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    dry_run: bool = False,
+    settings: Settings | None = None,
+) -> MirrorResult:
+    """Mirror the historic flood **depth rasters** for a region into the cache.
+
+    Ensures the index bundle is local (so the ROI query + later offline use work),
+    resolves the region's flood events, and pre-downloads their whole source depth
+    rasters into the download cache — so a later ``floods(region).download()`` /
+    ``.stats()`` / ``.plot(depth=True)`` runs fully offline. Records a per-raster
+    sha256+size ledger in ``floods_mirror.json``. Sources are whole (ROI-independent),
+    so a later sub-region query reuses them. Network-permitted (the populate action).
+
+    Returns:
+        MirrorResult: rasters downloaded, with ``.n_expected``/``.missing``/etc.
+    """
+    settings = settings or get_settings()
+    roi_kwargs = {
+        "point": point,
+        "radius_m": radius_m,
+        "bbox": bbox,
+        "shapefile": shapefile,
+        "buffer_m": buffer_m,
+        "year": year,
+        "start": start,
+        "end": end,
+        "level": level,
+        "shape": shape,
+    }
+    _ensure_local_index(settings)
+    cat = _query_events(settings, region, roi_kwargs)
+    downloader = DownloadService(settings=settings)
+    ledger_path = settings.get_floods_mirror_path()
+    ledger = load_ledger(ledger_path)
+
+    expected: dict[str, dict[str, Any]] = {}
+    for _, row in cat.iterrows():
+        url, fn = row.get("download_url"), row.get("filename")
+        if url and fn and fn not in expected:
+            expected[fn] = {
+                "url": url,
+                "event_id": row.get("event_id"),
+                "date": row.get("date"),
+            }
+    dl_dir = downloader.download_dir
+    n_expected = len(expected)
+
+    if dry_run:
+        missing = sorted(fn for fn in expected if not nonempty_file(dl_dir / fn))
+        est = sum(ledger_size(ledger, fn) or _FLOOD_TILE_BYTES_EST for fn in missing)
+        return MirrorResult(
+            0,
+            n_expected=n_expected,
+            bytes_total=est,
+            missing=missing,
+            ledger_path=ledger_path,
+        )
+    if not expected:
+        logger.info("floods_mirror_empty_roi")
+        return MirrorResult(0, n_expected=0, ledger_path=ledger_path)
+
+    items = list(expected.items())
+    results: dict[str, Path | None] = {}
+    with (
+        file_progress(
+            len(items), enabled=True, description="Mirroring flood maps"
+        ) as advance,
+        ThreadPoolExecutor(
+            max_workers=min(len(items), settings.max_workers_dl)
+        ) as pool,
+    ):
+        futures = {
+            pool.submit(
+                downloader.download_file,
+                meta["url"],
+                fn,
+                expected_size=ledger_size(ledger, fn),
+            ): fn
+            for fn, meta in items
+        }
+        for future in as_completed(futures):
+            results[futures[future]] = future.result()
+            advance(1)
+
+    records: dict[str, dict[str, Any]] = {}
+    for fn, p in results.items():
+        if p is not None and p.exists():
+            records[fn] = {
+                **file_record(p),
+                "event_id": expected[fn]["event_id"],
+                "date": expected[fn]["date"],
+            }
+    downloaded = sum(1 for p in results.values() if p is not None)
+    missing = sorted(fn for fn, p in results.items() if p is None)
+    roi_bbox = None
+    if len(cat) and cat.geometry.iloc[0] is not None:
+        roi_bbox = list(cat.geometry.iloc[0].bounds)
+    update_ledger(
+        ledger_path, records, region_meta={"bbox": roi_bbox, "n_events": n_expected}
+    )
+    logger.info(
+        "mirror_floods_complete",
+        downloaded=downloaded,
+        of=n_expected,
+        missing=len(missing),
+    )
+    return MirrorResult(
+        downloaded,
+        n_expected=n_expected,
+        bytes_total=sum(r["size_bytes"] for r in records.values()),
+        missing=missing,
+        ledger_path=ledger_path,
+    )
+
+
+def verify_floods_mirror(
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    year: int | None = None,
+    start: str | int | None = None,
+    end: str | int | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    deep: bool = False,
+    settings: Settings | None = None,
+) -> MirrorReport:
+    """Report local flood depth-map mirror readiness for a region (present/missing/corrupt)."""
+    settings = settings or get_settings()
+    roi_kwargs = {
+        "point": point,
+        "radius_m": radius_m,
+        "bbox": bbox,
+        "shapefile": shapefile,
+        "buffer_m": buffer_m,
+        "year": year,
+        "start": start,
+        "end": end,
+        "level": level,
+        "shape": shape,
+    }
+    cat = _query_events(settings, region, roi_kwargs)
+    expected = sorted({fn for _, row in cat.iterrows() if (fn := row.get("filename"))})
+    downloader = DownloadService(settings=settings)
+    ledger_path = settings.get_floods_mirror_path()
+    report = verify_against_ledger(
+        expected,
+        downloader.download_dir,
+        load_ledger(ledger_path),
+        collection="floods",
+        deep=deep,
+        remediation_cmd="euroflood mirror floods --bbox <lon0 lat0 lon1 lat1>",
+    )
+    report.ledger_path = ledger_path
+    return report
+
+
+def _index_bundle_files(settings: Settings) -> list[str]:
+    """The published index bundle's file names (COG + tables + manifest)."""
+    return [
+        settings.index_filename,
+        settings.dictionary_parquet_filename,
+        settings.dictionary_meta_filename,
+        settings.events_filename,
+        settings.manifest_filename,
+    ]
+
+
+def mirror_index(
+    *, dry_run: bool = False, settings: Settings | None = None
+) -> MirrorResult:
+    """Mirror the published flood **index** bundle (catalogue) into the cache.
+
+    Pulls the COG + dictionary + events + manifest (hash-verified) so ``floods(region)``
+    *queries* run offline. Wraps `IndexRepository.mirror`; network-permitted.
+    """
+    settings = settings or get_settings()
+    files = _index_bundle_files(settings)
+    if dry_run:
+        missing = sorted(f for f in files if not nonempty_file(settings.cache_dir / f))
+        return MirrorResult(
+            0,
+            n_expected=len(files),
+            missing=missing,
+            ledger_path=settings.get_manifest_path(),
+        )
+    IndexRepository(settings=settings).mirror(include_cog=True)
+    downloaded = sum(1 for f in files if nonempty_file(settings.cache_dir / f))
+    return MirrorResult(
+        downloaded, n_expected=len(files), ledger_path=settings.get_manifest_path()
+    )
+
+
+def verify_index_mirror(
+    *, deep: bool = False, settings: Settings | None = None
+) -> MirrorReport:
+    """Report local index-bundle readiness against the manifest's checksums."""
+    settings = settings or get_settings()
+    manifest_path = settings.get_manifest_path()
+    files_map: dict[str, Any] = {}
+    if manifest_path.exists():
+        with contextlib.suppress(json.JSONDecodeError, OSError):
+            files_map = json.loads(manifest_path.read_text()).get("files", {})
+    report = verify_against_ledger(
+        _index_bundle_files(settings),
+        settings.cache_dir,
+        {"tiles": files_map},
+        collection="index",
+        deep=deep,
+        remediation_cmd="euroflood mirror index",
+    )
+    report.ledger_path = manifest_path
+    return report

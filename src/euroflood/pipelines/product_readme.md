@@ -12,6 +12,7 @@ GeoTIFFs it actually needs.
 - **License:** CC-BY-4.0 (see *Attribution* below)
 - **Built with:** the open-source [`euroflood`](https://github.com/cisgroup/euroflood) Python library
 - **Latest version:** `v__VERSION__/`
+__ZENODO_DOI_LINE__
 
 ## Layout
 

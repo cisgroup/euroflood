@@ -18,7 +18,14 @@ from importlib.metadata import PackageNotFoundError
 from importlib.metadata import version as _version
 from typing import TYPE_CHECKING, Any
 
-from .api import download, floods, hazard, mirror_hazard
+from .api import (
+    download,
+    floods,
+    hazard,
+    mirror,
+    offline,
+    verify,
+)
 from .config import settings
 from .logging import _install_quiet_default, setup_logging
 from .pipelines.discovery import FloodFrame
@@ -72,12 +79,14 @@ __all__ = [
     "floods",
     "footprints",
     "hazard",
-    "mirror_hazard",
+    "mirror",
+    "offline",
     "open_depth",
     "plot",
     "plot_depth",
     "settings",
     "setup_logging",
+    "verify",
 ]
 
 

@@ -19,7 +19,8 @@ from . import __version__, _progress, console
 from .api import download as api_download
 from .api import floods as api_floods
 from .api import hazard as api_hazard
-from .api import mirror_hazard as api_mirror_hazard
+from .api import mirror as api_mirror
+from .api import verify as api_verify
 from .config import settings
 from .exceptions import (
     CacheSchemaError,
@@ -39,7 +40,7 @@ from .pipelines.export import ExportPipeline, export_plan
 from .pipelines.hazard import build_hazard_manifest
 from .pipelines.ingestion import IngestionPipeline
 from .pipelines.mirror import MirrorPipeline
-from .services.index_repository import IndexRepository
+from .services.mirror_ledger import MirrorResult
 
 logger = structlog.get_logger(__name__)
 
@@ -68,15 +69,15 @@ _NEXT_STEPS: list[tuple[type[BaseException], str]] = [
     (
         CacheSchemaError,
         "Rebuild with 'euroflood build-index', or pull a published one with "
-        "'euroflood mirror-index'.",
+        "'euroflood mirror index'.",
     ),
     (
         FileNotFoundError,
-        "Run 'euroflood build-index' (or 'euroflood mirror-index' for a "
+        "Run 'euroflood build-index' (or 'euroflood mirror index' for a "
         "published index).",
     ),
     (NetworkError, "Check your network connection and retry."),
-    (HazardError, "Verify the return period; see 'euroflood mirror-hazard'."),
+    (HazardError, "Verify the return period; see 'euroflood mirror hazard'."),
 ]
 
 
@@ -226,7 +227,7 @@ def ingest(
     console.success("Ingest complete.")
 
 
-@cli.command()
+@cli.command(name="fetch-sources")
 @click.option("--year", type=int, help="Mirror only this year (default: all years).")
 @click.option("--update", is_flag=True, help="Re-scrape the inventory first.")
 @click.option(
@@ -249,7 +250,7 @@ def ingest(
 @click.option(
     "--dry-run", "dry_run", is_flag=True, help="Print the plan and exit (no changes)."
 )
-def mirror(
+def fetch_sources(
     year: int | None,
     update: bool,
     verify: bool,
@@ -257,9 +258,10 @@ def mirror(
     limit: int | None,
     dry_run: bool,
 ) -> None:
-    """Download ALL source flood-map tiles to the cache (download-only; resumable).
+    """Download ALL raw source flood-map tiles to the cache (producer; ~35 GB).
 
-    The stable "download first, then process" path for the full archive (~35 GB).
+    The stable "download first, then process" path for the full archive, used to
+    *build* the index. Not a consumer offline command — for that use ``mirror``.
     Re-running skips files already present; ``--verify`` re-fetches any whose
     on-disk size doesn't match the JRC listing; a later ``ingest`` only processes
     the cached files.
@@ -268,7 +270,7 @@ def mirror(
     if dry_run:
         p = pipeline.plan(year=year, limit=limit)
         console.echo(
-            f"[dry-run] mirror: {p['to_download']} to download of {p['tiles']} "
+            f"[dry-run] fetch-sources: {p['to_download']} to download of {p['tiles']} "
             f"({p['total_gb']} GB), {p['present']} present -> {p['dest']}"
         )
         if p.get("note"):
@@ -437,7 +439,229 @@ def publish(
             )
 
 
-@cli.command(name="verify-remote")
+# --- offline mirror / verify family ----------------------------------------
+def _roi_options(f: Any) -> Any:
+    """Attach the standard ROI-selection options to a mirror/verify subcommand."""
+    f = click.argument("place", required=False)(f)
+    f = click.option(
+        "--bbox",
+        nargs=4,
+        type=float,
+        default=None,
+        help="ROI box: MINX MINY MAXX MAXY (WGS84).",
+    )(f)
+    f = click.option(
+        "--point",
+        nargs=2,
+        type=float,
+        default=None,
+        help="ROI point: LAT LON (with --radius).",
+    )(f)
+    f = click.option(
+        "--radius",
+        "radius_m",
+        type=float,
+        default=0.0,
+        help="Radius (m) around --point.",
+    )(f)
+    f = click.option(
+        "--shapefile",
+        type=click.Path(exists=True, dir_okay=False),
+        default=None,
+        help="Vector file used as the ROI.",
+    )(f)
+    f = click.option(
+        "--buffer", "buffer_m", type=float, default=0.0, help="Extra metric ROI buffer."
+    )(f)
+    f = click.option(
+        "--shape",
+        type=click.Choice(["exact", "bbox", "hull"]),
+        default="exact",
+        help="ROI shape derived from the region.",
+    )(f)
+    return f
+
+
+def _roi_kwargs(
+    place: str | None,
+    bbox: tuple[float, ...] | None,
+    point: tuple[float, ...] | None,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+) -> dict[str, Any]:
+    return {
+        "region": place or None,
+        "bbox": tuple(bbox) if bbox else None,
+        "point": tuple(point) if point else None,
+        "radius_m": radius_m,
+        "shapefile": shapefile,
+        "buffer_m": buffer_m,
+        "shape": shape,
+    }
+
+
+def _report_mirror(label: str, res: Any) -> None:
+    line = f"  {label}: {res.downloaded}/{res.n_expected} available"
+    if res.missing:
+        line += f"; {len(res.missing)} missing (e.g. {', '.join(res.missing[:3])})"
+    console.echo(line + ".")
+
+
+def _report_verify(rep: Any) -> None:
+    console.echo(f"  {rep.summary()}")
+    if rep.missing:
+        console.echo(f"    missing: {', '.join(rep.missing[:6])}")
+    if rep.corrupt:
+        console.echo(f"    corrupt: {', '.join(rep.corrupt[:6])}")
+
+
+@cli.group()
+def mirror() -> None:
+    """Stage data for offline/HPC use: index | floods | hazard | all."""
+
+
+@cli.group()
+def verify() -> None:
+    """Check local-mirror readiness: index | floods | hazard | all | remote."""
+
+
+@mirror.command("index")
+@click.option("--dry-run", "dry_run", is_flag=True, help="Print the plan and exit.")
+def mirror_index_cmd(dry_run: bool) -> None:
+    """Mirror the flood catalogue (index bundle) so floods() queries run offline."""
+    if dry_run:
+        res = api_mirror("index", dry_run=True)
+        assert isinstance(res, MirrorResult)
+        console.echo(
+            f"[dry-run] mirror index: {res.n_expected - len(res.missing)}/"
+            f"{res.n_expected} bundle files present -> {settings.cache_dir}"
+        )
+        return
+    res = api_mirror("index")
+    assert isinstance(res, MirrorResult)
+    console.success(
+        f"Index mirrored to {settings.cache_dir} "
+        f"({res.downloaded}/{res.n_expected} files)."
+    )
+
+
+@mirror.command("floods")
+@_roi_options
+@click.option("--year", type=int, default=None, help="Only floods in this year.")
+@click.option("--start", default=None, help="Floods on/after (YYYY[-MM-DD]).")
+@click.option("--end", default=None, help="Floods on/before (YYYY[-MM-DD]).")
+@click.option("--dry-run", "dry_run", is_flag=True, help="Print the plan and exit.")
+def mirror_floods_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    year: int | None,
+    start: str | None,
+    end: str | None,
+    dry_run: bool,
+) -> None:
+    """Mirror flood DEPTH maps for a region so floods().download() runs offline."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    res = api_mirror("floods", year=year, start=start, end=end, dry_run=dry_run, **kw)
+    assert isinstance(res, MirrorResult)
+    if dry_run:
+        console.echo(
+            f"[dry-run] mirror floods: {len(res.missing)} of {res.n_expected} depth "
+            f"map(s) to fetch (~{res.bytes_total / 1e6:.0f} MB) -> "
+            f"{settings.cache_dir / 'downloads'}"
+        )
+        return
+    _report_mirror("floods", res)
+    console.success("Flood depth maps mirrored.")
+
+
+@mirror.command("hazard")
+@_roi_options
+@click.option(
+    "--return-period",
+    "-r",
+    "return_periods",
+    type=int,
+    multiple=True,
+    help="Return period(s). Repeatable. Default: all.",
+)
+@click.option("--dry-run", "dry_run", is_flag=True, help="Print the plan and exit.")
+def mirror_hazard_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    return_periods: tuple[int, ...],
+    dry_run: bool,
+) -> None:
+    """Mirror GLOFAS hazard tiles for a region so hazard().download() runs offline."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    rps: int | list[int] | None = list(return_periods) or None
+    res = api_mirror("hazard", return_period=rps, dry_run=dry_run, **kw)
+    assert isinstance(res, MirrorResult)
+    if dry_run:
+        console.echo(
+            f"[dry-run] mirror hazard: {len(res.missing)} of {res.n_expected} tile(s) "
+            f"to fetch (~{res.bytes_total / 1e6:.0f} MB) -> "
+            f"{settings.get_hazard_tiles_dir()}"
+        )
+        return
+    _report_mirror("hazard", res)
+    console.success(f"{res.downloaded} hazard tile(s) available locally.")
+
+
+@mirror.command("all")
+@_roi_options
+@click.option(
+    "--return-period",
+    "-r",
+    "return_periods",
+    type=int,
+    multiple=True,
+    help="Hazard return period(s). Repeatable. Default: all.",
+)
+@click.option("--year", type=int, default=None, help="Flood year filter.")
+@click.option("--start", default=None, help="Flood start filter.")
+@click.option("--end", default=None, help="Flood end filter.")
+@click.option("--dry-run", "dry_run", is_flag=True, help="Print the plan and exit.")
+def mirror_all_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    return_periods: tuple[int, ...],
+    year: int | None,
+    start: str | None,
+    end: str | None,
+    dry_run: bool,
+) -> None:
+    """Mirror index + flood depths + hazard tiles for a region (one-shot prestage)."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    rps: int | list[int] | None = list(return_periods) or None
+    out = api_mirror(
+        "all", return_period=rps, year=year, start=start, end=end, dry_run=dry_run, **kw
+    )
+    assert isinstance(out, dict)  # 'all' returns one result per layer
+    console.echo(f"{'[dry-run] ' if dry_run else ''}mirror all:")
+    for layer in ("index", "floods", "hazard"):
+        _report_mirror(layer, out[layer])
+    if not dry_run:
+        console.success("All layers mirrored for the region.")
+
+
+@verify.command("remote")
 @click.option(
     "--url",
     "url",
@@ -449,8 +673,8 @@ def publish(
     is_flag=True,
     help="Also SHA-256 the full COG (a large download), not just the small tables.",
 )
-def verify_remote(url: str | None, deep: bool) -> None:
-    """Verify a published index end-to-end over HTTP (manifest, /vsicurl COG, a query)."""
+def verify_remote_cmd(url: str | None, deep: bool) -> None:
+    """Verify a PUBLISHED index end-to-end over HTTP (manifest, /vsicurl COG, a query)."""
     from ._data import resolve_base_url
     from .pipelines.verify import verify_published
 
@@ -469,41 +693,106 @@ def verify_remote(url: str | None, deep: bool) -> None:
     console.success(report.summary())
 
 
-@cli.command(name="mirror-index")
-@click.option(
-    "--tables-only",
-    "tables_only",
-    is_flag=True,
-    help="Mirror only the small tables (dictionary + events + meta); stream the COG.",
-)
-@click.option(
-    "--dry-run", "dry_run", is_flag=True, help="Print the plan and exit (no changes)."
-)
-def mirror_index(tables_only: bool, dry_run: bool) -> None:
-    """Download the published index bundle to the local cache (offline / HPC mirror).
+def _emit_verify(rep: Any) -> None:
+    """Print a local-mirror report and raise VerificationError if not ready."""
+    _report_verify(rep)
+    if not rep.ok:
+        remedy = rep.remediation()
+        raise VerificationError(
+            rep.summary() + (f". Repair: {remedy}" if remedy else "")
+        )
+    console.success(rep.summary())
 
-    Reads ``index_base_url``; pulls the COG + normalized dictionary + events table +
-    manifest so ``floods()`` runs fully offline. ``--tables-only`` mirrors just the
-    ~20 MB tables and leaves the COG to stream via ``/vsicurl``.
-    """
-    repo = IndexRepository(settings=settings)
-    if not repo.is_remote:
-        raise click.ClickException(
-            "Set index_mode='remote' and index_base_url to mirror a published index."
-        )
-    if dry_run:
-        target = (
-            "tables (dictionary + events + meta)"
-            if tables_only
-            else "full bundle (+ COG)"
-        )
-        console.echo(
-            f"[dry-run] mirror-index: would pull {target} from "
-            f"{settings.index_base_url} -> {settings.cache_dir}"
-        )
-        return
-    repo.mirror(include_cog=not tables_only)
-    console.success(f"Index mirrored to {settings.cache_dir}.")
+
+@verify.command("index")
+@click.option("--deep", is_flag=True, help="Re-hash sha256 vs the manifest.")
+def verify_index_cmd(deep: bool) -> None:
+    """Report index-bundle mirror readiness."""
+    _emit_verify(api_verify("index", deep=deep))
+
+
+@verify.command("floods")
+@_roi_options
+@click.option("--deep", is_flag=True, help="Re-hash sha256 vs the ledger.")
+def verify_floods_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    deep: bool,
+) -> None:
+    """Report flood depth-map mirror readiness for a region."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    _emit_verify(api_verify("floods", deep=deep, **kw))
+
+
+@verify.command("hazard")
+@_roi_options
+@click.option(
+    "--return-period",
+    "-r",
+    "return_periods",
+    type=int,
+    multiple=True,
+    help="Return period(s). Repeatable. Default: all.",
+)
+@click.option("--deep", is_flag=True, help="Re-hash sha256 vs the ledger.")
+def verify_hazard_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    return_periods: tuple[int, ...],
+    deep: bool,
+) -> None:
+    """Report hazard-tile mirror readiness for a region."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    rps: int | list[int] | None = list(return_periods) or None
+    _emit_verify(api_verify("hazard", return_period=rps, deep=deep, **kw))
+
+
+@verify.command("all")
+@_roi_options
+@click.option(
+    "--return-period",
+    "-r",
+    "return_periods",
+    type=int,
+    multiple=True,
+    help="Hazard return period(s). Repeatable.",
+)
+@click.option("--deep", is_flag=True, help="Re-hash sha256 vs the ledgers.")
+def verify_all_cmd(
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    buffer_m: float,
+    shape: str,
+    return_periods: tuple[int, ...],
+    deep: bool,
+) -> None:
+    """Report index + floods + hazard mirror readiness for a region."""
+    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    rps: int | list[int] | None = list(return_periods) or None
+    out = api_verify("all", return_period=rps, deep=deep, **kw)
+    assert isinstance(out, dict)  # 'all' returns one report per layer
+    failed: list[str] = []
+    for layer in ("index", "floods", "hazard"):
+        console.echo(f"{layer}:")
+        _report_verify(out[layer])
+        if not out[layer].ok:
+            failed.append(layer)
+    if failed:
+        raise VerificationError(f"Mirror incomplete for: {', '.join(failed)}.")
+    console.success("All layers present and verified.")
 
 
 @cli.command()
@@ -689,31 +978,6 @@ def hazard(
     elif out_path:
         _write_catalogue(catalogue, out_path)
         console.success(f"Wrote catalogue to {out_path}")
-
-
-@cli.command(name="mirror-hazard")
-@click.option(
-    "--return-period",
-    "-r",
-    "return_periods",
-    type=int,
-    multiple=True,
-    help="Return period(s) to mirror. Repeatable. Default: all.",
-)
-@click.option(
-    "--dry-run", "dry_run", is_flag=True, help="Print the plan and exit (no download)."
-)
-def mirror_hazard(return_periods: tuple[int, ...], dry_run: bool) -> None:
-    """Download ALL GLOFAS hazard tiles into the cache for offline/local access."""
-    rps: int | list[int] | None = list(return_periods) or None
-    if dry_run:
-        console.echo(
-            f"[dry-run] mirror-hazard: would download all tiles for RP(s) "
-            f"{rps if rps is not None else 'all'} -> {settings.get_hazard_tiles_dir()}"
-        )
-        return
-    count = api_mirror_hazard(return_period=rps)
-    console.success(f"{count} hazard tile(s) available locally.")
 
 
 @cli.command(name="build-hazard-manifest")

@@ -114,6 +114,7 @@ class DownloadService:
                             on_bytes(len(chunk))
                 expected = r.headers.get("Content-Length")
                 encoding = r.headers.get("Content-Encoding", "").lower()
+                transfer = r.headers.get("Transfer-Encoding", "").lower()
                 if (
                     expected is not None
                     and encoding in ("", "identity")
@@ -121,6 +122,18 @@ class DownloadService:
                 ):
                     raise requests.RequestException(
                         f"truncated download: {written} of {expected} bytes for {url}"
+                    )
+                if expected is None and "chunked" not in transfer:
+                    # With neither a Content-Length nor chunked framing, a premature
+                    # connection close is indistinguishable from a complete body, so a
+                    # truncated transfer cannot be detected here and is committed as if
+                    # whole. Surface it so the silent-truncation class of issue #25
+                    # cannot hide in the (rare) no-length-header path. JRC's Apache
+                    # sends Content-Length for tiles, so this does not fire for them.
+                    logger.warning(
+                        "download_length_unverified",
+                        file=local_path.name,
+                        bytes=written,
                     )
             os.replace(temp_path, local_path)  # atomic within one filesystem
         finally:

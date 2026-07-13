@@ -131,12 +131,12 @@ def test_cli_build_hazard_manifest(mocker):
     mock_build.assert_called_once()
 
 
-def test_cli_mirror(mocker):
-    """mirror forwards its flags and reports the cached tile count."""
+def test_cli_fetch_sources(mocker):
+    """fetch-sources (renamed producer mirror) forwards flags and reports the count."""
     pipe = mocker.patch("euroflood.cli.MirrorPipeline")
     pipe.return_value.run.return_value = 3280
 
-    result = CliRunner().invoke(cli, ["mirror", "--verify"])
+    result = CliRunner().invoke(cli, ["fetch-sources", "--verify"])
 
     assert result.exit_code == 0
     assert "3280 source tile(s) available" in result.output
@@ -146,7 +146,7 @@ def test_cli_mirror(mocker):
 
 
 # --- dry-run (no side effects) --------------------------------------------
-def test_cli_mirror_dry_run(mocker):
+def test_cli_fetch_sources_dry_run(mocker):
     pipe = mocker.patch("euroflood.cli.MirrorPipeline")
     pipe.return_value.plan.return_value = {
         "tiles": 5,
@@ -155,9 +155,9 @@ def test_cli_mirror_dry_run(mocker):
         "total_gb": 0.04,
         "dest": "d",
     }
-    result = CliRunner().invoke(cli, ["mirror", "--dry-run"])
+    result = CliRunner().invoke(cli, ["fetch-sources", "--dry-run"])
     assert result.exit_code == 0
-    assert "[dry-run] mirror" in result.output
+    assert "[dry-run] fetch-sources" in result.output
     pipe.return_value.run.assert_not_called()
 
 
@@ -201,11 +201,18 @@ def test_cli_download_dry_run(mocker):
 
 
 def test_cli_mirror_hazard_dry_run(mocker):
-    m = mocker.patch("euroflood.cli.api_mirror_hazard")
-    result = CliRunner().invoke(cli, ["mirror-hazard", "-r", "100", "--dry-run"])
+    from euroflood.services.mirror_ledger import MirrorResult
+
+    m = mocker.patch(
+        "euroflood.cli.api_mirror",
+        return_value=MirrorResult(
+            0, n_expected=2, missing=["a.tif", "b.tif"], bytes_total=2_700_000
+        ),
+    )
+    result = CliRunner().invoke(cli, ["mirror", "hazard", "-r", "100", "--dry-run"])
     assert result.exit_code == 0
-    assert "[dry-run] mirror-hazard" in result.output
-    m.assert_not_called()
+    assert "[dry-run] mirror hazard" in result.output
+    assert m.call_args.kwargs["dry_run"] is True  # plans, never downloads
 
 
 def test_cli_floods_command(mocker):
@@ -325,14 +332,68 @@ def test_cli_hazard_download(mocker):
 
 
 def test_cli_mirror_hazard(mocker):
-    """mirror-hazard bulk-downloads tiles and reports the local count."""
-    mock_mirror = mocker.patch("euroflood.cli.api_mirror_hazard", return_value=542)
+    """mirror hazard forwards the ROI + RPs and reports the local count."""
+    from euroflood.services.mirror_ledger import MirrorResult
 
-    result = CliRunner().invoke(cli, ["mirror-hazard", "-r", "100", "-r", "500"])
-
+    m = mocker.patch(
+        "euroflood.cli.api_mirror", return_value=MirrorResult(542, n_expected=542)
+    )
+    result = CliRunner().invoke(
+        cli, ["mirror", "hazard", "--bbox", "10.5", "50.2", "11.5", "50.8", "-r", "100"]
+    )
     assert result.exit_code == 0
     assert "542 hazard tile(s) available locally" in result.output
-    mock_mirror.assert_called_once_with(return_period=[100, 500])
+    assert m.call_args.args[0] == "hazard"
+    assert m.call_args.kwargs["bbox"] == (10.5, 50.2, 11.5, 50.8)
+    assert m.call_args.kwargs["return_period"] == [100]
+
+
+def test_cli_mirror_floods(mocker):
+    from euroflood.services.mirror_ledger import MirrorResult
+
+    m = mocker.patch(
+        "euroflood.cli.api_mirror", return_value=MirrorResult(3, n_expected=3)
+    )
+    result = CliRunner().invoke(
+        cli, ["mirror", "floods", "--bbox", "6.1", "52.0", "6.3", "52.2"]
+    )
+    assert result.exit_code == 0
+    assert m.call_args.args[0] == "floods"
+    assert m.call_args.kwargs["bbox"] == (6.1, 52.0, 6.3, 52.2)
+
+
+def test_cli_verify_hazard_success(mocker):
+    from euroflood.services.mirror_ledger import MirrorReport
+
+    mocker.patch(
+        "euroflood.cli.api_verify",
+        return_value=MirrorReport(collection="hazard", present=["a"], n_expected=1),
+    )
+    result = CliRunner().invoke(
+        cli, ["verify", "hazard", "--bbox", "6", "52", "7", "53"]
+    )
+    assert result.exit_code == 0
+    assert "1/1 present" in result.output
+
+
+def test_cli_verify_hazard_missing_exits_nonzero(mocker):
+    from euroflood.services.mirror_ledger import MirrorReport
+
+    mocker.patch(
+        "euroflood.cli.api_verify",
+        return_value=MirrorReport(
+            collection="hazard",
+            present=[],
+            missing=["a.tif"],
+            n_expected=1,
+            remediation_cmd="euroflood mirror hazard --bbox ...",
+        ),
+    )
+    result = CliRunner().invoke(
+        cli, ["verify", "hazard", "--bbox", "6", "52", "7", "53"]
+    )
+    assert result.exit_code == 10  # VerificationError
+    assert "Repair" in result.output
 
 
 # --- _write_catalogue: parquet & geojson writer branches ------------------
@@ -375,8 +436,8 @@ def test_cli_ingest_dry_run_with_note(mocker):
     pipe.return_value.run.assert_not_called()
 
 
-def test_cli_mirror_dry_run_with_note(mocker):
-    """mirror --dry-run echoes the optional 'note' line."""
+def test_cli_fetch_sources_dry_run_with_note(mocker):
+    """fetch-sources --dry-run echoes the optional 'note' line."""
     pipe = mocker.patch("euroflood.cli.MirrorPipeline")
     pipe.return_value.plan.return_value = {
         "tiles": 5,
@@ -386,7 +447,7 @@ def test_cli_mirror_dry_run_with_note(mocker):
         "dest": "d",
         "note": "retry-failed: 2 in dead-letter ledger",
     }
-    result = CliRunner().invoke(cli, ["mirror", "--dry-run"])
+    result = CliRunner().invoke(cli, ["fetch-sources", "--dry-run"])
     assert result.exit_code == 0
     assert "note: retry-failed: 2 in dead-letter ledger" in result.output
     pipe.return_value.run.assert_not_called()
@@ -689,40 +750,31 @@ def test_cli_json_output_mode(mocker):
     assert data[0]["event_id"] == 10
 
 
-def test_cli_mirror_index_not_remote_errors():
-    """mirror-index without a remote config raises a clean ClickException."""
-    result = CliRunner().invoke(cli, ["mirror-index"])
-    assert result.exit_code != 0
-    assert "index_mode='remote'" in result.output
+def test_cli_mirror_index_dry_run(mocker):
+    """mirror index --dry-run prints the plan and mirrors nothing."""
+    from euroflood.services.mirror_ledger import MirrorResult
 
-
-def test_cli_mirror_index_remote_dry_run(mocker):
-    """mirror-index --dry-run (remote) prints the plan and mirrors nothing."""
-    repo = mocker.patch("euroflood.cli.IndexRepository").return_value
-    repo.is_remote = True
-    result = CliRunner().invoke(cli, ["mirror-index", "--dry-run"])
+    m = mocker.patch(
+        "euroflood.cli.api_mirror",
+        return_value=MirrorResult(0, n_expected=5, missing=["a", "b", "c", "d", "e"]),
+    )
+    result = CliRunner().invoke(cli, ["mirror", "index", "--dry-run"])
     assert result.exit_code == 0
-    assert "[dry-run] mirror-index" in result.output
-    repo.mirror.assert_not_called()
+    assert "[dry-run] mirror index" in result.output
+    assert m.call_args.kwargs["dry_run"] is True
 
 
-def test_cli_mirror_index_remote_runs(mocker):
-    """mirror-index (remote) pulls the full bundle and confirms."""
-    repo = mocker.patch("euroflood.cli.IndexRepository").return_value
-    repo.is_remote = True
-    result = CliRunner().invoke(cli, ["mirror-index"])
+def test_cli_mirror_index_runs(mocker):
+    """mirror index pulls the full bundle and confirms."""
+    from euroflood.services.mirror_ledger import MirrorResult
+
+    m = mocker.patch(
+        "euroflood.cli.api_mirror", return_value=MirrorResult(5, n_expected=5)
+    )
+    result = CliRunner().invoke(cli, ["mirror", "index"])
     assert result.exit_code == 0
     assert "Index mirrored" in result.output
-    repo.mirror.assert_called_once_with(include_cog=True)
-
-
-def test_cli_mirror_index_tables_only(mocker):
-    """--tables-only mirrors the small tables and streams the COG."""
-    repo = mocker.patch("euroflood.cli.IndexRepository").return_value
-    repo.is_remote = True
-    result = CliRunner().invoke(cli, ["mirror-index", "--tables-only"])
-    assert result.exit_code == 0
-    repo.mirror.assert_called_once_with(include_cog=False)
+    assert m.call_args.args[0] == "index"
 
 
 def test_exit_code_and_next_step_fallbacks():
@@ -747,7 +799,7 @@ def test_cli_verify_remote_success(mocker):
     report = VerifyReport(base_url="https://x/y/v1")
     report.record("manifest_fetched", True, "4 files")
     mocker.patch("euroflood.pipelines.verify.verify_published", return_value=report)
-    result = CliRunner().invoke(cli, ["verify-remote", "--url", "https://x/y/v1"])
+    result = CliRunner().invoke(cli, ["verify", "remote", "--url", "https://x/y/v1"])
     assert result.exit_code == 0, result.output
     assert "checks passed" in result.output
 
@@ -758,12 +810,12 @@ def test_cli_verify_remote_failure_exits_10(mocker):
     report = VerifyReport(base_url="https://x/y/v1")
     report.record("manifest_fetched", False, "boom")
     mocker.patch("euroflood.pipelines.verify.verify_published", return_value=report)
-    result = CliRunner().invoke(cli, ["verify-remote", "--url", "https://x/y/v1"])
+    result = CliRunner().invoke(cli, ["verify", "remote", "--url", "https://x/y/v1"])
     assert result.exit_code == 10
 
 
 def test_cli_verify_remote_no_url_errors(mocker):
     mocker.patch("euroflood._data.DEFAULT_INDEX_BASE_URL", None)
-    result = CliRunner().invoke(cli, ["verify-remote"])
+    result = CliRunner().invoke(cli, ["verify", "remote"])
     assert result.exit_code != 0
     assert "No index base URL" in result.output

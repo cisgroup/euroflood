@@ -25,14 +25,29 @@ from pathlib import Path
 from typing import Any
 
 from .config import Settings
+from .config import settings as _settings
 from .pipelines.discovery import (
     DiscoveryPipeline,
     FloodFrame,
     _dispatch_download,
+    mirror_floods,
+    mirror_index,
+    verify_floods_mirror,
+    verify_index_mirror,
 )
-from .pipelines.hazard import HazardPipeline, mirror_hazard
+from .pipelines.hazard import HazardPipeline, mirror_hazard, verify_hazard_mirror
+from .services.mirror_ledger import MirrorReport, MirrorResult
 
-__all__ = ["download", "floods", "hazard", "mirror_hazard"]
+__all__ = [
+    "download",
+    "floods",
+    "hazard",
+    "mirror",
+    "offline",
+    "verify",
+]
+
+_MIRROR_TARGETS = ("index", "floods", "hazard", "all")
 
 
 def floods(
@@ -220,4 +235,227 @@ def download(
         force=force,
         settings=settings,
         on_bytes=on_bytes,
+    )
+
+
+def offline(enabled: bool = True) -> None:
+    """Flip EuroFlood into (or out of) fully-offline mode.
+
+    Sets the master ``offline`` switch on the global settings, forcing both
+    collections cache-only (the index COG is not streamed, hazard tiles are not
+    fetched) and the geocoder to the local NUTS backend — the programmatic
+    equivalent of ``EUROFLOOD_OFFLINE=1``. Mirror your data first (see `mirror`).
+
+    Examples:
+        >>> import euroflood as ef
+        >>> ef.offline()  # this node has no internet  # doctest: +SKIP
+        >>> ef.hazard(
+        ...     bbox=(6.1, 52.0, 6.3, 52.2), return_period=100
+        ... ).download()  # doctest: +SKIP
+    """
+    _settings.offline = enabled
+
+
+def mirror(
+    target: str,
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    return_period: int | list[int] | None = None,
+    year: int | None = None,
+    start: str | int | None = None,
+    end: str | int | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    dry_run: bool = False,
+    settings: Settings | None = None,
+) -> MirrorResult | dict[str, MirrorResult]:
+    """Stage a data layer for offline/HPC use.
+
+    ``target`` selects what to mirror into the cache:
+
+    - ``"index"`` — the flood **catalogue** (global; enables offline ``floods()`` queries).
+    - ``"floods"`` — historic flood **depth maps** for the region (ensures the index).
+    - ``"hazard"`` — GLOFAS **hazard tiles** for the region.
+    - ``"all"`` — index + flood depths + hazard tiles for the region.
+
+    ``region``/``bbox``/``point``/… scope the region for ``floods``/``hazard``/``all``.
+    ``return_period`` applies to hazard, ``year``/``start``/``end`` to floods. Pass
+    ``dry_run=True`` to plan without downloading.
+
+    Returns:
+        A `MirrorResult` (single target) or a ``{layer: MirrorResult}`` dict (``"all"``).
+
+    Examples:
+        >>> import euroflood as ef
+        >>> ef.mirror(
+        ...     "hazard", bbox=(6.1, 52.0, 6.3, 52.2), return_period=100
+        ... )  # doctest: +SKIP
+        >>> ef.mirror("all", "Zutphen")  # doctest: +SKIP
+    """
+    key = target.lower()
+    if key == "index":
+        return mirror_index(dry_run=dry_run, settings=settings)
+    if key == "floods":
+        return mirror_floods(
+            region,
+            point=point,
+            radius_m=radius_m,
+            bbox=bbox,
+            shapefile=shapefile,
+            buffer_m=buffer_m,
+            year=year,
+            start=start,
+            end=end,
+            level=level,
+            shape=shape,
+            dry_run=dry_run,
+            settings=settings,
+        )
+    if key == "hazard":
+        return mirror_hazard(
+            region,
+            point=point,
+            radius_m=radius_m,
+            bbox=bbox,
+            shapefile=shapefile,
+            buffer_m=buffer_m,
+            return_period=return_period,
+            level=level,
+            shape=shape,
+            dry_run=dry_run,
+            settings=settings,
+        )
+    if key == "all":
+        return {
+            "index": mirror_index(dry_run=dry_run, settings=settings),
+            "floods": mirror_floods(
+                region,
+                point=point,
+                radius_m=radius_m,
+                bbox=bbox,
+                shapefile=shapefile,
+                buffer_m=buffer_m,
+                year=year,
+                start=start,
+                end=end,
+                level=level,
+                shape=shape,
+                dry_run=dry_run,
+                settings=settings,
+            ),
+            "hazard": mirror_hazard(
+                region,
+                point=point,
+                radius_m=radius_m,
+                bbox=bbox,
+                shapefile=shapefile,
+                buffer_m=buffer_m,
+                return_period=return_period,
+                level=level,
+                shape=shape,
+                dry_run=dry_run,
+                settings=settings,
+            ),
+        }
+    raise ValueError(
+        f"Unknown mirror target {target!r}; choose from {list(_MIRROR_TARGETS)}."
+    )
+
+
+def verify(
+    target: str,
+    region: Any = None,
+    *,
+    point: tuple[float, float] | None = None,
+    radius_m: float = 0.0,
+    bbox: tuple[float, float, float, float] | None = None,
+    shapefile: str | Path | None = None,
+    buffer_m: float = 0.0,
+    return_period: int | list[int] | None = None,
+    year: int | None = None,
+    start: str | int | None = None,
+    end: str | int | None = None,
+    level: int | None = None,
+    shape: str = "exact",
+    deep: bool = False,
+    settings: Settings | None = None,
+) -> MirrorReport | dict[str, MirrorReport]:
+    """Report local-mirror readiness (present/missing/corrupt) for a data layer.
+
+    ``target`` mirrors `mirror` (``index``/``floods``/``hazard``/``all``). ``deep``
+    re-hashes each file's sha256 against the ledger (slower, catches silent corruption).
+    Returns a `MirrorReport` (or a ``{layer: MirrorReport}`` dict for ``"all"``).
+    """
+    key = target.lower()
+    if key == "index":
+        return verify_index_mirror(deep=deep, settings=settings)
+    if key == "floods":
+        return verify_floods_mirror(
+            region,
+            point=point,
+            radius_m=radius_m,
+            bbox=bbox,
+            shapefile=shapefile,
+            buffer_m=buffer_m,
+            year=year,
+            start=start,
+            end=end,
+            level=level,
+            shape=shape,
+            deep=deep,
+            settings=settings,
+        )
+    if key == "hazard":
+        return verify_hazard_mirror(
+            region,
+            point=point,
+            radius_m=radius_m,
+            bbox=bbox,
+            shapefile=shapefile,
+            buffer_m=buffer_m,
+            return_period=return_period,
+            level=level,
+            shape=shape,
+            deep=deep,
+            settings=settings,
+        )
+    if key == "all":
+        return {
+            "index": verify_index_mirror(deep=deep, settings=settings),
+            "floods": verify_floods_mirror(
+                region,
+                point=point,
+                radius_m=radius_m,
+                bbox=bbox,
+                shapefile=shapefile,
+                buffer_m=buffer_m,
+                year=year,
+                start=start,
+                end=end,
+                level=level,
+                shape=shape,
+                deep=deep,
+                settings=settings,
+            ),
+            "hazard": verify_hazard_mirror(
+                region,
+                point=point,
+                radius_m=radius_m,
+                bbox=bbox,
+                shapefile=shapefile,
+                buffer_m=buffer_m,
+                return_period=return_period,
+                level=level,
+                shape=shape,
+                deep=deep,
+                settings=settings,
+            ),
+        }
+    raise ValueError(
+        f"Unknown verify target {target!r}; choose from {list(_MIRROR_TARGETS)}."
     )

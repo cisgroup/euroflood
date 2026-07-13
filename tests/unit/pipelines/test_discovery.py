@@ -526,3 +526,117 @@ def test_dispatch_download_routes_to_historic(index_env, mocker):
     cat = _dl_catalogue(index_env)
     _dispatch_download(cat, index_env.output_dir, settings=index_env)
     dc.assert_called_once()
+
+
+# --- offline mirror (floods depth maps) ------------------------------------
+def _cache_source(settings, filename, data=b"depthraster"):
+    """Write a fake source raster into the download cache; return its path."""
+    dl_dir = settings.cache_dir / "downloads"
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    p = dl_dir / filename
+    p.write_bytes(data)
+    return p
+
+
+def test_mirror_floods_downloads_event_sources(index_env, mocker):
+    """mirror_floods fetches the ROI events' source rasters + writes a ledger."""
+    from euroflood.pipelines.discovery import mirror_floods
+
+    _patch_geocoder(mocker)  # "X" -> box covering the index
+    dl_dir = index_env.cache_dir / "downloads"
+    dl_dir.mkdir(parents=True, exist_ok=True)
+    mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        side_effect=lambda url, filename, **_k: _cache_source(index_env, filename),
+    )
+    res = mirror_floods("X")
+    assert res.downloaded == 1 and res.n_expected == 1
+    led = json.loads(index_env.get_floods_mirror_path().read_text())
+    rec = led["mirror"]["tiles"]["WD_MERGE_2020_a.tif"]
+    assert rec["event_id"] == 10 and rec["size_bytes"] > 0
+
+
+def test_mirror_floods_dry_run_no_download(index_env, mocker):
+    from euroflood.pipelines.discovery import mirror_floods
+
+    _patch_geocoder(mocker)
+    dl = mocker.patch("euroflood.services.downloader.DownloadService.download_file")
+    res = mirror_floods("X", dry_run=True)
+    assert res.downloaded == 0 and res.n_expected == 1
+    assert res.missing == ["WD_MERGE_2020_a.tif"]
+    dl.assert_not_called()
+
+
+def test_floods_offline_missing_source_raises(index_env, mocker, mock_requests_get):
+    from euroflood.exceptions import ProcessingError
+
+    _patch_geocoder(mocker)
+    index_env.offline = True  # nothing cached
+    with pytest.raises(ProcessingError, match="EUROFLOOD_OFFLINE") as exc:
+        ef.floods("X").download(index_env.output_dir)
+    # The remediation names the offline switch, not a no-op index_mode change.
+    assert "mirror floods" in str(exc.value) and "index_mode='auto'" not in str(
+        exc.value
+    )
+    mock_requests_get.assert_not_called()
+
+
+def test_floods_offline_uses_cached_source_no_network(
+    index_env, mocker, mock_requests_get
+):
+    _patch_geocoder(mocker)
+    _cache_source(index_env, "WD_MERGE_2020_a.tif")
+    mocker.patch(
+        "euroflood.services.raster_ops.RasterOps.crop_raster", side_effect=_fake_crop
+    )
+    index_env.offline = True
+    dl = ef.floods("X").download(index_env.output_dir)
+    assert len(dl.files) == 1
+    mock_requests_get.assert_not_called()  # cache hit, no HTTP
+
+
+def test_verify_floods_present_then_missing(index_env, mocker):
+    from euroflood.pipelines.discovery import mirror_floods, verify_floods_mirror
+
+    _patch_geocoder(mocker)
+    mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        side_effect=lambda url, filename, **_k: _cache_source(index_env, filename),
+    )
+    mirror_floods("X")
+    assert verify_floods_mirror("X").ok
+    (index_env.cache_dir / "downloads" / "WD_MERGE_2020_a.tif").unlink()
+    rep = verify_floods_mirror("X")
+    assert not rep.ok and "WD_MERGE_2020_a.tif" in rep.missing
+
+
+# --- mirror index + offline toggle -----------------------------------------
+def test_mirror_index_calls_repository(mock_settings, mocker):
+    from euroflood.pipelines.discovery import mirror_index
+
+    m = mocker.patch("euroflood.pipelines.discovery.IndexRepository.mirror")
+    mirror_index()
+    m.assert_called_once_with(include_cog=True)
+
+
+def test_mirror_index_dry_run_no_network(mock_settings, mocker):
+    from euroflood.pipelines.discovery import mirror_index
+
+    m = mocker.patch("euroflood.pipelines.discovery.IndexRepository.mirror")
+    res = mirror_index(dry_run=True)
+    m.assert_not_called()
+    assert res.downloaded == 0 and res.n_expected == 5
+
+
+def test_offline_toggle_flips_both_collections(mock_settings):
+    import euroflood as ef
+    from euroflood.services.index_repository import IndexRepository
+
+    assert not mock_settings.offline_floods and not mock_settings.offline_hazard
+    ef.offline()
+    assert mock_settings.offline
+    assert mock_settings.offline_floods and mock_settings.offline_hazard
+    assert mock_settings.effective_geocoder_backend == "local"
+    assert not IndexRepository(settings=mock_settings).is_remote
+    ef.offline(False)
+    assert not mock_settings.offline

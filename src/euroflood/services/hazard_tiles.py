@@ -49,6 +49,8 @@ class HazardTileIndex:
         self,
         settings: Settings | None = None,
         downloader: DownloadService | None = None,
+        *,
+        allow_download: bool = True,
     ) -> None:
         """Build the index.
 
@@ -57,11 +59,15 @@ class HazardTileIndex:
             downloader: Optional injected DownloadService. Defaults to one writing
                 into ``settings.get_hazard_dir()`` so the index lands at
                 ``settings.get_hazard_index_path()``.
+            allow_download: If False (an offline consumer), a missing tile index is a
+                clear error instead of a network fetch. The mirror always passes True
+                (it is the populate action); consumers pass ``not offline_hazard``.
         """
         self.settings = settings or get_settings()
         self.downloader = downloader or DownloadService(
             download_dir=self.settings.get_hazard_dir(), settings=self.settings
         )
+        self.allow_download = allow_download
         self._tiles: gpd.GeoDataFrame | None = None  # lazy
 
     # --- index loading -----------------------------------------------------
@@ -74,6 +80,21 @@ class HazardTileIndex:
             raise HazardError(
                 f"hazard_index_path {target} does not exist; point it at a valid "
                 "tile_extents.geojson or unset it to download the default."
+            )
+        if not self.allow_download:
+            switch = (
+                "EUROFLOOD_OFFLINE" if self.settings.offline else "hazard_mode='local'"
+            )
+            remedy = (
+                "unset offline (EUROFLOOD_OFFLINE=0)"
+                if self.settings.offline
+                else "set hazard_mode='auto'"
+            )
+            raise HazardError(
+                f"hazard is offline ({switch}) but the GLOFAS tile index is not cached "
+                f"at {target}. Populate it on a networked node with "
+                f"`euroflood mirror hazard ...`, or {remedy} to allow the one-time JRC "
+                "download."
             )
         url = self.settings.hazard_base_url + self.settings.hazard_index_filename
         fetched = self.downloader.download_file(

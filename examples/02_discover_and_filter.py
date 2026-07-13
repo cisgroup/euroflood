@@ -111,7 +111,7 @@ cat.to_parquet("zutphen.parquet")
 #
 # ```bash
 # export EUROFLOOD_GEOCODER_BACKEND=local   # resolve names from the offline NUTS dataset
-# euroflood mirror-index                    # pull the whole index once, then read it locally
+# euroflood mirror index                     # pull the whole index once, then read it locally
 # ```
 #
 # …or pass a `bbox=` / `point=` to skip geocoding altogether.

@@ -168,6 +168,19 @@ class Settings(BaseSettings):
         default="hazard_manifest.json",
         description="Filename of the hazard reference manifest.",
     )
+    hazard_mode: str = Field(
+        default="auto",
+        description="Where hazard tiles are read from: 'auto' (cache if present, "
+        "else fetch from JRC; today's behaviour), 'local' (cache only; never touch "
+        "the network — HPC/offline), or 'remote' (always allow JRC). The analogue of "
+        "index_mode. Orthogonal to hazard_cache_tiles (cache-whole-tile vs /vsicurl); "
+        "'local' forces cache reads.",
+    )
+    floods_mirror_filename: str = Field(
+        default="floods_mirror.json",
+        description="Filename of the local flood depth-map mirror ledger "
+        "(sha256/size per cached source raster).",
+    )
 
     # --- Index build (producer; full-scale HPC export) ---
     dictionary_parquet_filename: str = Field(
@@ -218,6 +231,13 @@ class Settings(BaseSettings):
         default=None,
         description="Base URL of the published index (falls back to the baked-in "
         "default, which is None until the index is published).",
+    )
+    offline: bool = Field(
+        default=False,
+        description="Master offline switch (env EUROFLOOD_OFFLINE). When True, forces "
+        "both collections cache-only (index_mode + hazard_mode treated as 'local') and "
+        "the geocoder to the local NUTS backend — the single 'this is an offline node' "
+        "flag. Set programmatically via euroflood.offline().",
     )
 
     # --- Source Cooperative (the live index host; producer/publish side) ---
@@ -325,8 +345,33 @@ class Settings(BaseSettings):
         return self.get_hazard_dir() / "tiles"
 
     def get_hazard_manifest_path(self) -> Path:
-        """Return the path to the hazard reference manifest."""
+        """Return the path to the hazard reference manifest (+ mirror ledger)."""
         return self.get_hazard_dir() / self.hazard_manifest_filename
+
+    def get_floods_mirror_path(self) -> Path:
+        """Return the path to the local flood depth-map mirror ledger."""
+        return self.cache_dir / self.floods_mirror_filename
+
+    @property
+    def offline_floods(self) -> bool:
+        """True when flood **depth maps** must be read cache-only (no network).
+
+        Gated by the master ``offline`` switch only; ``index_mode`` narrowly controls
+        the catalogue read (a ``local`` catalogue still allows on-demand depth-map
+        fetches, matching today's behaviour). Use ``offline`` / ``euroflood.offline()``
+        for a fully offline node.
+        """
+        return self.offline
+
+    @property
+    def offline_hazard(self) -> bool:
+        """True when hazard tiles must be read cache-only (no network)."""
+        return self.offline or self.hazard_mode == "local"
+
+    @property
+    def effective_geocoder_backend(self) -> str:
+        """The geocoder backend to use, forced to 'local' in offline mode."""
+        return "local" if self.offline else self.geocoder_backend
 
     def get_dictionary_parquet_path(self) -> Path:
         """Return the path to the single combo_id-sorted Parquet dictionary file."""

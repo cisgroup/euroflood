@@ -138,13 +138,83 @@ def test_download_multi_tile_mosaics(hazard_env, synth_rp_tile, mocker, tmp_path
         assert (src.read(1) != -9999.0).any()
 
 
-def test_download_skips_when_no_tiles_fetched(hazard_env, mocker, tmp_path):
+def test_download_raises_when_a_required_tile_is_missing(hazard_env, mocker, tmp_path):
+    """A wholly-failed request fails loudly (issue #25): no truncated raster, a clear error."""
     mocker.patch(
         "euroflood.services.downloader.DownloadService.download_file",
-        return_value=None,  # every tile fetch fails
+        return_value=None,  # the tile fetch fails
     )
-    dl = ef.hazard(bbox=ROI_SINGLE, return_period=100).download(tmp_path / "out")
-    assert dl.files == []
+    out = tmp_path / "out"
+    with pytest.raises(HazardError, match="No hazard rasters could be produced"):
+        ef.hazard(bbox=ROI_SINGLE, return_period=100).download(out)
+    # No truncated output file (and no leftover atomic-temp) was left behind.
+    assert list(out.glob("hazard_RP100_*.tif")) == []
+    assert list(out.glob("*.part")) == []
+
+
+def test_download_multi_tile_one_tile_fails_is_fail_closed(
+    hazard_env, synth_rp_tile, mocker, tmp_path
+):
+    """The reported bug: an ROI spanning two tiles where the east tile fails must NOT
+    silently mosaic the surviving west tile into a truncated hazard (issue #25)."""
+    a = synth_rp_tile("ID1_T_A_RP100_depth", 10.0, 50.0, 11.0, 51.0)
+    mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        side_effect=lambda url, filename, **_kw: a if "T_A" in filename else None,
+    )
+    out = tmp_path / "out"
+    # A single requested RP with an incomplete tile set produces nothing -> raise.
+    with pytest.raises(HazardError, match="RP100"):
+        ef.hazard(bbox=ROI_MULTI, return_period=100).download(out)
+    assert list(out.glob("hazard_RP100_*.tif")) == []  # no truncated raster written
+
+
+def test_download_multi_rp_partial_failure_returns_complete_siblings(
+    hazard_env, synth_rp_tile, mocker, tmp_path
+):
+    """A transient failure on one return period must not discard the complete siblings.
+
+    RP100's east tile fails (its raster is skipped, not truncated), while RP500 fetches
+    both tiles and is written — so the sweep returns RP500 rather than aborting wholesale."""
+
+    def _dl(url, filename, **_kw):
+        if "T_B" in filename and "RP100" in filename:
+            return None  # the east tile is transiently unavailable, for RP100 only
+        bbox = (
+            (10.0, 50.0, 11.0, 51.0) if "T_A" in filename else (11.0, 50.0, 12.0, 51.0)
+        )
+        return synth_rp_tile(filename.removesuffix(".tif"), *bbox)
+
+    mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file", side_effect=_dl
+    )
+    out = tmp_path / "out"
+    dl = ef.hazard(bbox=ROI_MULTI, return_period=[100, 500]).download(out)
+
+    assert len(dl.files) == 1  # RP500 survived; RP100 was skipped, not aborted
+    assert dl.files[0].name.startswith("hazard_RP500_")
+    assert list(out.glob("hazard_RP100_*.tif")) == []  # no truncated RP100 raster
+
+
+def test_download_stamps_source_tile_provenance(
+    hazard_env, synth_rp_tile, mocker, tmp_path
+):
+    """A successful hazard crop embeds the tile set it was built from (auditable)."""
+    _patch_tiles(
+        mocker,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    dl = ef.hazard(bbox=ROI_MULTI, return_period=100).download(tmp_path / "out")
+    with rasterio.open(dl.files[0]) as src:
+        tags = src.tags()
+    assert tags["EUROFLOOD_RETURN_PERIOD"] == "100"
+    assert tags["EUROFLOOD_N_SOURCE_TILES"] == "2"
+    assert "ID1_T_A_RP100_depth.tif" in tags["EUROFLOOD_SOURCE_TILES"]
+    assert "ID2_T_B_RP100_depth.tif" in tags["EUROFLOOD_SOURCE_TILES"]
 
 
 def test_hazard_query_autodetects_cached(hazard_env, synth_rp_tile, mocker):
@@ -187,13 +257,23 @@ def test_tile_sources_vsicurl_mode(mock_settings, mocker):
     downloader.download_file.assert_not_called()
 
 
-def test_tile_sources_partial_download_filters_failures(mock_settings, mocker):
-    # Some tiles fetch, some fail (None) — only the successful ones become sources.
+def test_tile_sources_partial_download_fails_closed(mock_settings, mocker):
+    # Some tiles fetch, some fail (None): fail closed. Mosaicking only the surviving
+    # subset would be a silently truncated hazard (issue #25), so this must raise.
     mock_settings.hazard_cache_tiles = True
     downloader = mocker.Mock()
     downloader.download_file.side_effect = [Path("a.tif"), None]
+    with pytest.raises(HazardError, match="Incomplete hazard tile set"):
+        _tile_sources([_tile(tid=1), _tile(tid=2)], downloader, mock_settings)
+
+
+def test_tile_sources_all_tiles_present_returns_sources(mock_settings, mocker):
+    """The happy path: every required tile fetches -> all become sources, in order."""
+    mock_settings.hazard_cache_tiles = True
+    downloader = mocker.Mock()
+    downloader.download_file.side_effect = [Path("a.tif"), Path("b.tif")]
     sources = _tile_sources([_tile(tid=1), _tile(tid=2)], downloader, mock_settings)
-    assert sources == ["a.tif"]
+    assert sources == ["a.tif", "b.tif"]
 
 
 def test_hazard_download_forwards_on_bytes(hazard_env, synth_rp_tile, mocker):
@@ -248,9 +328,9 @@ def test_mirror_hazard_downloads_all_tiles(hazard_env, mocker):
         "euroflood.services.downloader.DownloadService.download_file",
         return_value=Path("tile.tif"),
     )
-    n = mirror_hazard(return_period=[100, 500])  # 4 tiles x 2 return periods
+    res = mirror_hazard(return_period=[100, 500])  # 4 tiles x 2 return periods
 
-    assert n == 8
+    assert res.downloaded == 8
     assert dl.call_count == 8
 
 
@@ -259,7 +339,204 @@ def test_mirror_hazard_via_api(hazard_env, mocker):
         "euroflood.services.downloader.DownloadService.download_file",
         return_value=Path("tile.tif"),
     )
-    assert ef.mirror_hazard(return_period=100) == 4
+    assert ef.mirror("hazard", return_period=100).downloaded == 4
+
+
+# --- region-scoped mirror + ledger -----------------------------------------
+def _seed_hazard_cache(settings, synth_rp_tile, mapping):
+    """Write real synth tiles into the hazard tiles cache dir (offline substrate)."""
+    tdir = settings.get_hazard_tiles_dir()
+    tdir.mkdir(parents=True, exist_ok=True)
+    for fn, bbox in mapping.items():
+        src = synth_rp_tile(fn.removesuffix(".tif"), *bbox)
+        (tdir / fn).write_bytes(src.read_bytes())
+    return tdir
+
+
+def test_mirror_region_downloads_only_intersecting_tiles(
+    hazard_env, synth_rp_tile, mocker, tmp_path
+):
+    """ROI_MULTI spans T_A|T_B -> exactly 2 tiles fetched (not all 4)."""
+    dl = _patch_tiles(
+        mocker,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    res = mirror_hazard(bbox=ROI_MULTI, return_period=100)
+    assert res.downloaded == 2 and res.n_expected == 2
+    assert {c.args[1] for c in dl.call_args_list} == {
+        "ID1_T_A_RP100_depth.tif",
+        "ID2_T_B_RP100_depth.tif",
+    }
+
+
+def test_mirror_region_single_tile(hazard_env, synth_rp_tile, mocker):
+    dl = _patch_tiles(
+        mocker, synth_rp_tile, {"ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0)}
+    )
+    assert mirror_hazard(bbox=ROI_SINGLE, return_period=100).downloaded == 1
+    assert dl.call_count == 1
+
+
+def test_mirror_writes_ledger_with_checksums(hazard_env, synth_rp_tile, mocker):
+    import hashlib
+    import json
+
+    _patch_tiles(
+        mocker, synth_rp_tile, {"ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0)}
+    )
+    mirror_hazard(bbox=ROI_SINGLE, return_period=100)
+    doc = json.loads(hazard_env.get_hazard_manifest_path().read_text())
+    rec = doc["mirror"]["tiles"]["ID1_T_A_RP100_depth.tif"]
+    assert rec["return_period"] == 100 and rec["size_bytes"] > 0
+    assert len(rec["sha256"]) == len(hashlib.sha256(b"").hexdigest())
+    assert doc["mirror"]["model_version"] == hazard_env.hazard_model_version
+
+
+def test_mirror_ledger_merges_across_regions(hazard_env, synth_rp_tile, mocker):
+    import json
+
+    _patch_tiles(
+        mocker,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    mirror_hazard(bbox=ROI_SINGLE, return_period=100)  # T_A only
+    mirror_hazard(bbox=(11.5, 50.2, 11.9, 50.8), return_period=100)  # T_B only
+    tiles = json.loads(hazard_env.get_hazard_manifest_path().read_text())["mirror"][
+        "tiles"
+    ]
+    assert set(tiles) == {"ID1_T_A_RP100_depth.tif", "ID2_T_B_RP100_depth.tif"}
+
+
+def test_mirror_dry_run_plans_without_downloading(hazard_env, synth_rp_tile, mocker):
+    dl = _patch_tiles(
+        mocker,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    res = mirror_hazard(bbox=ROI_MULTI, return_period=100, dry_run=True)
+    assert res.downloaded == 0 and res.n_expected == 2 and len(res.missing) == 2
+    assert res.bytes_total > 0  # estimate
+    dl.assert_not_called()
+
+
+def test_mirror_redownloads_size_mismatched_cache(hazard_env, synth_rp_tile, mocker):
+    """A cached tile whose size disagrees with the ledger is re-fetched (expected_size)."""
+    import json
+
+    dl = _patch_tiles(
+        mocker, synth_rp_tile, {"ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0)}
+    )
+    # Pre-seed a ledger claiming a different size for the tile.
+    led = hazard_env.get_hazard_manifest_path()
+    led.parent.mkdir(parents=True, exist_ok=True)
+    led.write_text(
+        json.dumps(
+            {"mirror": {"tiles": {"ID1_T_A_RP100_depth.tif": {"size_bytes": 999999}}}}
+        )
+    )
+    mirror_hazard(bbox=ROI_SINGLE, return_period=100)
+    assert dl.call_args.kwargs.get("expected_size") == 999999  # threaded through
+
+
+# --- offline mode ----------------------------------------------------------
+def test_local_mode_uses_cached_tiles_no_network(
+    hazard_env, synth_rp_tile, mocker, mock_requests_get, tmp_path
+):
+    _seed_hazard_cache(
+        hazard_env, synth_rp_tile, {"ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0)}
+    )
+    hazard_env.hazard_mode = "local"
+    dl = mocker.spy(RasterOps, "mosaic_and_crop")
+    net = mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        side_effect=AssertionError("no network in local mode"),
+    )
+    out = ef.hazard(bbox=ROI_SINGLE, return_period=100).download(tmp_path / "out")
+    assert len(out.files) == 1
+    dl.assert_called_once()
+    net.assert_not_called()
+    mock_requests_get.assert_not_called()
+
+
+def test_local_mode_missing_tile_raises_with_remediation(
+    hazard_env, mocker, mock_requests_get, tmp_path
+):
+    hazard_env.hazard_mode = "local"  # nothing cached
+    net = mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        side_effect=AssertionError("no network"),
+    )
+    out = tmp_path / "out"
+    with pytest.raises(HazardError, match="mirror hazard"):
+        ef.hazard(bbox=ROI_SINGLE, return_period=100).download(out)
+    net.assert_not_called()
+    mock_requests_get.assert_not_called()
+    assert list(out.glob("hazard_RP100_*.tif")) == []
+
+
+def test_local_mode_missing_index_offline_error(hazard_env, mock_requests_get):
+    # No cached tile_extents (hazard_index_path points at the fixture, so unset it).
+    hazard_env.hazard_index_path = None
+    hazard_env.hazard_mode = "local"
+    with pytest.raises(HazardError, match="not cached"):
+        ef.hazard(bbox=ROI_SINGLE, return_period=100)
+    mock_requests_get.assert_not_called()
+
+
+def test_tile_sources_local_mode_is_cache_only(mock_settings, synth_rp_tile):
+    mock_settings.hazard_index_path = None
+    mock_settings.hazard_mode = "local"
+    tdir = mock_settings.get_hazard_tiles_dir()
+    tdir.mkdir(parents=True)
+    (tdir / "ID1_T_A_RP100_depth.tif").write_bytes(b"x")
+    import unittest.mock as um
+
+    downloader = um.Mock()
+    sources = _tile_sources([_tile()], downloader, mock_settings)
+    assert sources == [str(tdir / "ID1_T_A_RP100_depth.tif")]
+    downloader.download_file.assert_not_called()
+
+
+# --- verify ----------------------------------------------------------------
+def test_verify_hazard_present_missing_corrupt(hazard_env, synth_rp_tile, mocker):
+    from euroflood.pipelines.hazard import verify_hazard_mirror
+
+    _patch_tiles(
+        mocker,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    # Mirror straight into the cache dir so verify has real files + a ledger.
+    _seed_hazard_cache(
+        hazard_env,
+        synth_rp_tile,
+        {
+            "ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0),
+            "ID2_T_B_RP100_depth.tif": (11.0, 50.0, 12.0, 51.0),
+        },
+    )
+    mirror_hazard(bbox=ROI_MULTI, return_period=100)  # writes the ledger
+
+    rep = verify_hazard_mirror(bbox=ROI_MULTI, return_period=100)
+    assert rep.ok and len(rep.present) == 2
+
+    (hazard_env.get_hazard_tiles_dir() / "ID2_T_B_RP100_depth.tif").unlink()
+    rep2 = verify_hazard_mirror(bbox=ROI_MULTI, return_period=100)
+    assert not rep2.ok and "ID2_T_B_RP100_depth.tif" in rep2.missing
 
 
 # --- reference manifest ----------------------------------------------------
@@ -278,3 +555,37 @@ def test_build_hazard_manifest(hazard_env):
     # The frozen tile_extents.geojson is referenced with an integrity record.
     assert "tile_extents.geojson" in doc["files"]
     assert doc["source_urls"]["jrc"] == hazard_env.hazard_base_url
+
+
+def test_mirror_model_version_change_evicts_stale_cache(
+    hazard_env, synth_rp_tile, mocker
+):
+    """A model_version bump evicts stale cached tiles so they are re-fetched, not reused."""
+    import json
+
+    tiles_dir = _seed_hazard_cache(
+        hazard_env, synth_rp_tile, {"ID1_T_A_RP100_depth.tif": (10.0, 50.0, 11.0, 51.0)}
+    )
+    cached = tiles_dir / "ID1_T_A_RP100_depth.tif"
+    assert cached.exists()
+    led = hazard_env.get_hazard_manifest_path()
+    led.parent.mkdir(parents=True, exist_ok=True)
+    led.write_text(json.dumps({"mirror": {"model_version": "OLD", "tiles": {}}}))
+    # download_file returns a path OUTSIDE the cache, so an evicted tile stays gone.
+    other = synth_rp_tile("other", 10.0, 50.0, 11.0, 51.0)
+    mocker.patch(
+        "euroflood.services.downloader.DownloadService.download_file",
+        return_value=other,
+    )
+    mirror_hazard(bbox=ROI_SINGLE, return_period=100)  # default model != "OLD"
+    assert not cached.exists()  # stale tile evicted (forced re-fetch)
+    doc = json.loads(led.read_text())
+    assert doc["mirror"]["model_version"] == hazard_env.hazard_model_version
+
+
+def test_offline_master_switch_message_names_env(hazard_env, mock_requests_get):
+    """Under EUROFLOOD_OFFLINE (not hazard_mode), the error names the master switch."""
+    hazard_env.offline = True  # master switch; hazard_mode stays 'auto'
+    with pytest.raises(HazardError, match="EUROFLOOD_OFFLINE"):
+        ef.hazard(bbox=ROI_SINGLE, return_period=100).download(hazard_env.output_dir)
+    mock_requests_get.assert_not_called()

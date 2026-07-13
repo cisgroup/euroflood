@@ -8,7 +8,7 @@
 #   ssh <NetID>@della-vis1.princeton.edu
 #   cd /scratch/gpfs/<GROUP>/$USER/euroflood
 #   EUROFLOOD_CACHE_DIR=/scratch/gpfs/<GROUP>/$USER/euroflood-test \
-#       uv run euroflood mirror --update --limit 5      # ~50 MB
+#       uv run euroflood fetch-sources --update --limit 5      # ~50 MB
 # Preview anything first with --dry-run, e.g.:
 #   uv run euroflood ingest --limit 5 --dry-run
 # Then from a login node:
@@ -44,7 +44,7 @@ LIMIT="${LIMIT:-5}"
 # Preflight: the small subset must already be mirrored (no internet on compute).
 [[ -f "$EUROFLOOD_CACHE_DIR/inventory.csv" ]] || {
     echo "no inventory in $EUROFLOOD_CACHE_DIR — stage a subset on della-vis first:" >&2
-    echo "  EUROFLOOD_CACHE_DIR=$EUROFLOOD_CACHE_DIR uv run euroflood mirror --update --limit $LIMIT" >&2
+    echo "  EUROFLOOD_CACHE_DIR=$EUROFLOOD_CACHE_DIR uv run euroflood fetch-sources --update --limit $LIMIT" >&2
     exit 1
 }
 
