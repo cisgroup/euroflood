@@ -40,7 +40,7 @@
 # %% [markdown]
 # ## Configuration in Python
 #
-# `ef.settings` is a Pydantic model — inspect it, or read/write individual fields. Every field
+# `ef.settings` is a Pydantic model: inspect it, or read/write individual fields. Every field
 # also has an `EUROFLOOD_<NAME>` environment variable.
 
 # %%

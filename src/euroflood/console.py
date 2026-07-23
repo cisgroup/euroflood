@@ -1,9 +1,9 @@
 """User-facing terminal output for the EuroFlood CLI.
 
 Two output concerns are split by stream. ``structlog`` owns *logs* on stderr (JSON
-on a non-TTY, which the HPC runbook relies on — see `logging`); this
-module owns *user-facing* output on stdout — status lines, result tables, and
-progress — via a single `Console`. Because progress lives on
+on a non-TTY, which the HPC runbook relies on, see `logging`); this
+module owns *user-facing* output on stdout (status lines, result tables, and
+progress) via a single `Console`. Because progress lives on
 stdout it can never be scribbled over by the stderr log stream.
 
 The module is imported only by `cli`, so ``import euroflood`` never
@@ -11,7 +11,7 @@ pulls in rich. Errors render to a separate stderr Console as a clean one-block
 message (no traceback) via `error_block`.
 
 Message text is always emitted through `Text` (never markup), so
-arbitrary content — place names, ``[dry-run]`` prefixes, file paths — is printed
+arbitrary content (place names, ``[dry-run]`` prefixes, file paths) is printed
 literally and never mis-parsed as a style tag.
 """
 
@@ -176,7 +176,7 @@ def render_catalogue(
 
     Args:
         df: The catalogue (a ``FloodFrame``/``GeoDataFrame``).
-        kind: ``"floods"`` or ``"hazard"`` — selects the column set + noun.
+        kind: ``"floods"`` or ``"hazard"``, selects the column set + noun.
         place: The queried place, echoed in the summary line.
         limit: Max rows shown; the rest are summarized as "… and N more".
     """

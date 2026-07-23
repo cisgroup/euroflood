@@ -6,11 +6,33 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 
 ## [Unreleased]
 
+## [0.2.1] - 2026-07-23
+
+### Added
+- **Case studies** in the docs: six real-world flood analyses reproduced from the
+  EuroFlood paper (Storm Boris, a decade at Zutphen, the Shannon callows, the Valencia
+  DANA, the Baltic surge, and a continental decade of recurrence), rendered from committed
+  notebook outputs. They ship to the docs site and GitHub but are excluded from the PyPI
+  distribution to keep it lean.
+- A **"Citing EuroFlood"** docs page collecting the software, index-dataset, and
+  source-data citations.
+
+### Changed
+- Documentation enriched from the paper: the landing page gains a continental
+  flood-recurrence showcase; **Concepts** gains the index schematic, a compactness
+  explanation, and new "How complete, and how trustworthy" and "Interpreting your
+  results" sections (validation and limitations). The two-stage access model is now
+  consistently called **Discover → Extract**, and figures/numbers are aligned with the
+  paper (e.g. ~18.9 GB source archive, ~138 MB index, seven GLOFAS return periods).
+- Auto-generated plot titles now use a colon instead of an em-dash (e.g. "Flood depth:
+  max of 2 events"), and the documentation (docs, tutorials, case studies, docstrings,
+  and README) avoids em-dashes throughout.
+
 ## [0.2.0] - 2026-07-13
 
 ### Added
 - **Unified offline / HPC mirror family**: a `mirror` command group stages any data layer into
-  the cache for offline use — `mirror index` (the flood catalogue, so `floods()` queries run
+  the cache for offline use: `mirror index` (the flood catalogue, so `floods()` queries run
   offline), `mirror floods --bbox …` (historic flood **depth maps** for a region), `mirror hazard
   --bbox …` (GLOFAS **hazard tiles** for a region), and `mirror all`. A matching `verify` group
   (`verify index|floods|hazard|all|remote`, `--deep`) reports local-mirror readiness
@@ -33,7 +55,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 ### Fixed
 - **Silent hazard truncation on a partial GLOFAS tile fetch.**
   For an ROI spanning more than one GLOFAS tile, `hazard(...).download()` dropped any tile whose
-  fetch failed and mosaicked whatever subset survived — warning only when the set was *completely*
+  fetch failed and mosaicked whatever subset survived, warning only when the set was *completely*
   empty. A single flaky JRC tile fetch therefore produced a valid-looking GeoTIFF covering only
   part of the ROI, with no error, silently corrupting any multi-return-period sweep. It now **fails
   closed**: an incomplete tile set is never mosaicked. A return period whose tiles cannot all be
@@ -47,7 +69,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 ### Added
 - **ROI `shape` option**: `floods()`/`hazard()` (and the `floods`/`download`/`hazard` CLI commands via
   `--shape`) take `shape="exact"` (default, the raw admin boundary), `"bbox"` (its bounding rectangle),
-  or `"hull"` (its convex hull). Administrative boundaries are legal, not hydrological, shapes — they
+  or `"hull"` (its convex hull). Administrative boundaries are legal, not hydrological, shapes: they
   often run down a river (excluding it), are oddly shaped, or split into exclaves; a bbox/hull ROI
   sidesteps that (and collapses a MultiPolygon into one clean shape). Applies to every region input,
   turns `point`+`radius_m` into a bounding square, and composes with `buffer_m` (which then grows the
@@ -55,7 +77,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 - **Tutorials** (`examples/`): a top-level folder of runnable, progressive Jupyter tutorials
   (Quickstart → Discover & filter → Visualize → Download & measure → Hazard → Quantitative
   analysis → CLI & configuration), jupytext-paired (`.py` + `.ipynb`), rendered on the docs
-  site (mkdocs-jupyter) and executed as tests — the cheap-path ones offline against a committed
+  site (mkdocs-jupyter) and executed as tests: the cheap-path ones offline against a committed
   fixture on every PR, all of them live monthly (and on demand). Supersedes the old root `demo.py`/`demo.ipynb`.
 - **Notebook/TTY progress bars**: `.download()` shows a transfer bar and the first-query index
   mirror shows activity when running interactively (a Jupyter notebook or a TTY). Toggle with
@@ -64,10 +86,10 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
   (`cache_dir/geocode/`), so a repeat `floods("Cologne")` skips the Nominatim round-trip. Toggle
   with `settings.geocode_cache` / `EUROFLOOD_GEOCODE_CACHE`.
 - **Quiet by default**: `import euroflood` no longer leaks structlog / pooch INFO lines to
-  stdout — the library is silent unless you call `ef.setup_logging(...)`.
+  stdout; the library is silent unless you call `ef.setup_logging(...)`.
 - **Faster repeat queries**: the index COG is opened once per process and reused (with GDAL's
-  in-process block cache), so a repeat `floods()` — and the `.plot()` / `.explore()` /
-  `.footprints()` recurrence views, which also read the index — are near-instant (~0.03–0.07s)
+  in-process block cache), so a repeat `floods()` (and the `.plot()` / `.explore()` /
+  `.footprints()` recurrence views, which also read the index) are near-instant (~0.03–0.07s)
   instead of re-opening the remote COG every call.
 - **Publishing** (`euroflood publish`): one-command upload of the built index bundle to
   **Source Cooperative** (the live `/vsicurl` host, via the optional `euroflood[publish]`
@@ -99,7 +121,7 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 ### Changed
 - **Leaner `viz` extra.** Removed the unused `mapclassify` dependency from the optional
   `euroflood[viz]` extra, which drops its heavy transitive tail (scikit-learn, scipy, networkx)
-  from the install — six fewer packages. `mapclassify` only serves geopandas' choropleth
+  from the install, six fewer packages. `mapclassify` only serves geopandas' choropleth
   *classification* schemes, which EuroFlood never uses (it draws folium via direct `GeoJson`/
   `ImageOverlay`), so `.plot()` / `.explore()` are unchanged.
 - **Documentation overhaul.** A cohesive azure "water" theme (custom palette + `extra.css`, logo +
@@ -116,30 +138,30 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
   cleanly.
 - **`plot(basemap=True)` fix.** The contextily basemap was drawn *over* the flood raster (muting the
   overlay); it now draws behind it (`zorder=-1`), so the flood reads clearly against the map.
-- **Tutorials & docs now headline Zutphen** (on the IJssel, NL) instead of Cologne/Valencia —
+- **Tutorials & docs now headline Zutphen** (on the IJssel, NL) instead of Cologne/Valencia:
   its recurrent river flooding makes a richer example and motivates `shape="bbox"` (its gemeente
   boundary follows the river). The offline test fixture was regenerated for Zutphen (with an
   appended OSM municipality boundary so the offline geocoder resolves it), tutorial 02 gained an
   executed `shape="bbox"` beat, and a latent `point=(lat, lon)` argument-order slip in the region
   examples was fixed.
 - **Parallel downloads**: `.download()` now fetches source rasters concurrently
-  (up to `settings.max_workers_dl`, default 8) instead of one at a time — a roughly
+  (up to `settings.max_workers_dl`, default 8) instead of one at a time, a roughly
   N× faster wall-clock for multi-event historic catalogues and multi-tile hazard
   layers. Output files, paths, and cache-hit skipping are unchanged; a per-file
   step bar replaces the byte bar for the library (notebook/TTY) path, while the CLI
   keeps its byte bar via `on_bytes`.
 - **Fewer per-call rebuilds**: the DuckDB connection (dictionary + events lookups)
   and the ~14 MB NUTS boundary dataset (offline `local` geocoder) are now cached
-  per process instead of being reopened/reloaded on every query — the same
+  per process instead of being reopened/reloaded on every query, the same
   "reuse, don't re-init" fix already applied to the index COG. Repeat queries and
   `local`-backend batches are correspondingly faster.
 - **Faster hazard stats and streaming reads**: `hazard(...).stats()` / `.summary()`
   read each depth raster once (was twice, to inspect the CRS first), and streaming
   `/vsicurl` hazard reads now run under the same GDAL env as the index COG.
 - `import euroflood` no longer eagerly imports the producer pipelines
-  (`ExportPipeline`, `IngestionPipeline`) or their scraper/BeautifulSoup stack —
+  (`ExportPipeline`, `IngestionPipeline`) or their scraper/BeautifulSoup stack;
   they resolve lazily on first use, so the consumer import is lighter.
-- `Settings` fields are now self-documenting via `Field(description=...)` — visible
+- `Settings` fields are now self-documenting via `Field(description=...)`, visible
   in `help()`, IDE tooltips, and the Configuration reference.
 - Replaced `tqdm` with `rich` for progress; `structlog` still owns machine/JSON
   logs on stderr (HPC-friendly), while user-facing output goes to stdout.

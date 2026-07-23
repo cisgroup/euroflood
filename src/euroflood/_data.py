@@ -2,7 +2,7 @@
 
 Zero-config consumers need a default place to read the index from. This module holds
 the **version-pinned base URL** of the hosted bundle and fetches its small tables with
-integrity checking + caching via `pooch`. The big COG is *not* fetched here — it is
+integrity checking + caching via `pooch`. The big COG is *not* fetched here. It is
 streamed a window at a time via GDAL ``/vsicurl`` (see
 `IndexRepository`).
 
@@ -56,7 +56,7 @@ def _retrying(settings: Settings) -> Retrying:
     """Exponential-backoff retryer for transient index-host failures.
 
     Mirrors `DownloadService`'s policy (``settings.retries``) so every
-    HTTP read of the published bundle — the manifest and the small tables — survives an
+    HTTP read of the published bundle (the manifest and the small tables) survives an
     intermittent 5xx instead of failing the caller's first query.
     """
     return Retrying(
@@ -81,7 +81,7 @@ def http_get(url: str, settings: Settings | None = None) -> requests.Response:
     """GET ``url``, retrying transient host failures with exponential backoff.
 
     A 5xx/429/timeout is retried up to ``settings.retries`` times; a permanent client
-    error (404, 403, ...) raises immediately — retrying it would only add latency.
+    error (404, 403, ...) raises immediately. Retrying it would only add latency.
     """
     settings = settings or get_settings()
 

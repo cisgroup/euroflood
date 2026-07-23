@@ -2,7 +2,7 @@
 
 The cheap half of the historic flood workflow. Resolves a region to an ROI,
 masks the global index raster to that ROI, and assembles a GeoDataFrame
-(`FloodFrame`) with one row per flood event — without downloading any
+(`FloodFrame`) with one row per flood event, without downloading any
 flood rasters. ``FloodFrame.download()`` (or the functional `download_catalogue`)
 materializes the cropped GeoTIFFs for the selected rows.
 """
@@ -69,7 +69,7 @@ CATALOGUE_COLUMNS = [
 class FloodFrame(gpd.GeoDataFrame):  # type: ignore[misc]
     """A GeoDataFrame of flood events with a convenience ``.download()`` method.
 
-    It *is* a plain ``geopandas.GeoDataFrame`` — filtering, stats, plotting and
+    It *is* a plain ``geopandas.GeoDataFrame``: filtering, stats, plotting and
     ``to_parquet`` all work as usual. The only addition is `download`, so
     ``floods(...).download("out/")`` and ``cat[cat.year == 2021].download("out/")``
     both work. Use the functional `download_catalogue` if a heavy reshape
@@ -131,7 +131,7 @@ class FloodFrame(gpd.GeoDataFrame):  # type: ignore[misc]
     def plot(self, *, geo: bool = False, **kwargs: Any) -> Any:
         """Plot this catalogue (static, matplotlib). Requires ``euroflood[viz]``.
 
-        The default is the flood-recurrence heatmap over the query ROI — cheap, no
+        The default is the flood-recurrence heatmap over the query ROI, cheap, no
         download.
 
         Args:
@@ -190,7 +190,7 @@ class FloodFrame(gpd.GeoDataFrame):  # type: ignore[misc]
         """Per-event flood extents from the index (one geometry per event).
 
         Replaces the catalogue's shared ROI geometry with each event's actual
-        footprint (derived from the index — no download) and adds an
+        footprint (derived from the index, no download) and adds an
         ``extent_km2`` column, so the result is a normal GeoDataFrame you can plot,
         ``explore``, ``to_file``, or measure. Requires ``euroflood[viz]``.
 
@@ -223,11 +223,11 @@ class FloodFrame(gpd.GeoDataFrame):  # type: ignore[misc]
 
         Routes by ``collection`` (see `_dispatch_download`), so a hazard
         catalogue fetches+mosaics+crops while a historic one downloads one file
-        per event — both via the same ``.download()``. Cropped outputs are cached:
+        per event, both via the same ``.download()``. Cropped outputs are cached:
         a re-run reuses existing files (nothing re-downloaded) unless ``force=True``.
 
         Returns the catalogue itself, now carrying a ``path`` column, so the result
-        is *actionable* — ``cat = ef.floods("Zutphen").download()`` then
+        is *actionable*: ``cat = ef.floods("Zutphen").download()`` then
         ``cat.plot(depth=True)`` / ``cat.stats()`` all reuse the downloaded rasters.
         The written paths are available via `files`.
 
@@ -280,11 +280,11 @@ class FloodFrame(gpd.GeoDataFrame):  # type: ignore[misc]
 
         One row per downloaded event: max/mean/p95 depth (m), flooded area (km²),
         water volume (m³ and million-m³), and wet-pixel count. Reads only rasters a
-        prior `download` fetched — no network I/O.
+        prior `download` fetched, no network I/O.
 
         Args:
             scale: Raster-value→metre multiplier. ``None`` (default) picks it from
-                the catalogue kind — EFAS historic depth is centimetres (``0.01``),
+                the catalogue kind: EFAS historic depth is centimetres (``0.01``),
                 GLOFAS hazard depth is already metres (``1.0``). Pass a value to override.
 
         Returns:
@@ -407,7 +407,7 @@ class DiscoveryPipeline:
     ) -> FloodFrame:
         """Query the index for a region/time -> a FloodFrame (no rasters fetched).
 
-        Backs `floods` — see it for the argument reference.
+        Backs `floods`. See it for the argument reference.
         ``output_dir`` is the directory the cached-download auto-detect scans
         (defaults to ``settings.output_dir``); pass the same dir you download to so a
         re-query of a previously-downloaded area is immediately actionable.
@@ -439,7 +439,7 @@ class DiscoveryPipeline:
 
         # A per-process cached open handle (opening a remote COG re-reads its tile index
         # each time); the GDAL env keeps the windowed read block-cached in-process, so a
-        # second query is near-instant. Local file or a /vsicurl URL — do not close it.
+        # second query is near-instant. Local file or a /vsicurl URL: do not close it.
         src = self.index.open_index()
         with rasterio.Env(**_GDAL_ENV):
             try:
@@ -630,7 +630,7 @@ def download_catalogue(
         tasks.append((pos, url, filename, out_path, row.geometry))
 
     # Offline (EUROFLOOD_OFFLINE / euroflood.offline()): the source rasters must
-    # already be in the download cache — never hit the network. A missing source is a
+    # already be in the download cache. Never hit the network. A missing source is a
     # remediable error pointing at `euroflood mirror floods` (cached sources fall
     # through: the download below returns cache hits and crops them with no network).
     if settings.offline_floods:
@@ -652,7 +652,7 @@ def download_catalogue(
             )
 
     def _commit(pos: int, src_path: Path | None, out_path: Path, geom: Any) -> None:
-        """Crop (or copy) a just-downloaded source into ``out_path`` — main thread."""
+        """Crop (or copy) a just-downloaded source into ``out_path`` (main thread)."""
         if src_path is None:
             return
         if crop and geom is not None:
@@ -664,7 +664,7 @@ def download_catalogue(
             results[pos] = out_path
 
     # Download the source tiles concurrently (the bottleneck); crop each as it lands
-    # in the main thread (crops stay serialized — cheap and thread-safe).
+    # in the main thread (crops stay serialized, cheap and thread-safe).
     if tasks:
         workers = min(len(tasks), settings.max_workers_dl)
         with (
@@ -774,7 +774,7 @@ def mirror_floods(
 
     Ensures the index bundle is local (so the ROI query + later offline use work),
     resolves the region's flood events, and pre-downloads their whole source depth
-    rasters into the download cache — so a later ``floods(region).download()`` /
+    rasters into the download cache, so a later ``floods(region).download()`` /
     ``.stats()`` / ``.plot(depth=True)`` runs fully offline. Records a per-raster
     sha256+size ledger in ``floods_mirror.json``. Sources are whole (ROI-independent),
     so a later sub-region query reuses them. Network-permitted (the populate action).

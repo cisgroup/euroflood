@@ -1,7 +1,7 @@
 """Resolve flexible location inputs to a single WGS84 geometry.
 
-Turns the various ways a user can name a region — place name, point + radius,
-bounding box, a user-supplied shapefile, a shapely geometry, or a GeoDataFrame —
+Turns the various ways a user can name a region (place name, point + radius,
+bounding box, a user-supplied shapefile, a shapely geometry, or a GeoDataFrame)
 into one shapely geometry in EPSG:4326, reusing `GeocodingService` for
 names and the metric-buffer trick from the extraction pipeline.
 """
@@ -94,7 +94,7 @@ class LocationResolver:
         geom = self._base(region, point, radius_m, bbox, shapefile, level)
         geom = self._apply_shape(geom, shape)
         if buffer_m:
-            # Keep a bbox/hull sharp-cornered when buffered — a box grows into a
+            # Keep a bbox/hull sharp-cornered when buffered: a box grows into a
             # bigger box, not a rounded one; organic "exact" shapes stay round.
             join = "round" if shape == "exact" else "mitre"
             geom = self.buffer_metric(geom, buffer_m, join_style=join)

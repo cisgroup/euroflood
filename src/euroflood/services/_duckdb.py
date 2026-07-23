@@ -3,7 +3,7 @@
 The dictionary and events repositories do a keyed ``read_parquet(...)`` per query.
 Opening a fresh ``duckdb.connect()`` each time costs ~5 ms (measured) and re-reads
 the Parquet footer, with zero reuse across the many queries a notebook session
-makes — the same "re-initialize per call" pattern the index-COG cache fixed.
+makes, the same "re-initialize per call" pattern the index-COG cache fixed.
 
 This module hands out **one connection per thread** (a DuckDB ``Connection`` is not
 safe to share across threads), reused for the process lifetime. Call

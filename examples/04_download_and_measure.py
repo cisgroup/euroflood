@@ -19,7 +19,7 @@
 # # 4. Download & measure the depth rasters
 #
 # Everything so far was free (index only). When you want the actual water-depth GeoTIFFs,
-# `.download()` fetches and crops **only** the events you selected — and returns the catalogue
+# `.download()` fetches and crops **only** the events you selected, and returns the catalogue
 # itself, now carrying its files, so the result stays *actionable*. When you run this
 # interactively you'll see a **download progress bar**.
 #
@@ -36,7 +36,7 @@ ef.settings.output_dir = Path("out")  # write crops here (relative, tidy)
 cat = ef.floods("Zutphen, Netherlands", shape="bbox")  # bbox ROI (tutorial 02)
 
 # %% [markdown]
-# Download a couple of events. Downloads are **cached** — re-running reuses the existing crops
+# Download a couple of events. Downloads are **cached**: re-running reuses the existing crops
 # (nothing is re-fetched) unless you pass `force=True`.
 
 # %%
@@ -84,7 +84,7 @@ depth.explore(tiles="grayscale")  # a single event's depth as an interactive ove
 # ```
 
 # %% [markdown]
-# ## Measure them — no network, reads the cached rasters
+# ## Measure them: no network, reads the cached rasters
 #
 # `.stats()` is a per-event table (max / mean / p95 depth in metres, flooded area in km², water
 # volume); `.summary()` is the aggregate envelope across all downloaded events. EFAS depth is in
@@ -100,7 +100,7 @@ dl.summary()
 # ## Downloads persist across sessions
 #
 # A later query of the same area (to the same output dir) automatically finds the crops already
-# on disk and pre-fills its `path` column — so you don't need to `.download()` again:
+# on disk and pre-fills its `path` column, so you don't need to `.download()` again:
 
 # %%
 again = ef.floods("Zutphen, Netherlands", shape="bbox")  # same ROI -> finds the crops

@@ -26,7 +26,7 @@ logger = structlog.get_logger(__name__)
 # stripes of ~this many pixels so peak memory is bounded by the stripe, not the
 # whole tile: these uint16 masks are mostly nodata and compress ~1000x on disk,
 # but a whole-band src.read(1) inflates one tile to its full size (up to
-# 60000x105000 ~ 12 GB) plus several temporaries — which OOM-killed the 32-worker
+# 60000x105000 ~ 12 GB) plus several temporaries, which OOM-killed the 32-worker
 # ingest. At ~8M pixels a stripe's arrays stay well under ~0.5 GB even if fully
 # wet, so a full worker pool fits comfortably on a standard node.
 _STRIPE_TARGET_PIXELS = 8_000_000
@@ -87,9 +87,9 @@ class RasterProcessor:
 
         try:
             with rasterio.open(tif_path) as src:
-                # Reproject policy (unchanged): a missing CRS cannot be trusted —
-                # treating the coordinates as WGS84 would silently mis-place every
-                # pixel — so skip and flag the file. Checked up front so we never
+                # Reproject policy (unchanged): a missing CRS cannot be trusted
+                # (treating the coordinates as WGS84 would silently mis-place every
+                # pixel), so skip and flag the file. Checked up front so we never
                 # read a multi-GB raster only to discard it.
                 if src.crs is None:
                     logger.warning("missing_crs_skip", file=tif_path.name)
@@ -141,8 +141,8 @@ class RasterProcessor:
                         continue
 
                     # Collapse duplicates: the source (~20 m) is finer than the
-                    # GlobalGrid (~90 m), so many source pixels — even across
-                    # stripes — land in one cell. Pack (col, row) into one uint64
+                    # GlobalGrid (~90 m), so many source pixels (even across
+                    # stripes) land in one cell. Pack (col, row) into one uint64
                     # so de-dup is a 1-D np.unique; de-dup per stripe first to keep
                     # the cross-stripe accumulator small. flood_id is constant per
                     # file, so a single (col, row) per cell suffices (the export

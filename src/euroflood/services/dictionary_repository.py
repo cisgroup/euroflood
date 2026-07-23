@@ -4,8 +4,8 @@ The export pipeline writes the NORMALIZED dictionary as partitioned Parquet (one
 row per ``combo_id`` -> integer ``flood_ids``). This repository maps the combo_ids
 found in an ROI to their ``flood_ids`` with a single keyed query that reads only
 the needed Hive partitions. Event *metadata* is resolved separately from
-``events.parquet`` (see `EventsRepository`)
-— it is no longer denormalized into every combo. A legacy JSON fallback (which may
+``events.parquet`` (see `EventsRepository`).
+It is no longer denormalized into every combo. A legacy JSON fallback (which may
 still embed ``events``) is kept for tiny/older caches.
 """
 

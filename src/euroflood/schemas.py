@@ -1,7 +1,7 @@
 """Data schemas and the on-disk dictionary version.
 
 Holds `FloodRecord` (one scraped source map, validated at ingest) and
-``DICTIONARY_SCHEMA_VERSION`` — the version stamp that guards the on-disk index
+``DICTIONARY_SCHEMA_VERSION``, the version stamp that guards the on-disk index
 dictionary against incompatible code (see the version history below).
 """
 

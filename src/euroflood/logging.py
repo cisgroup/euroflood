@@ -3,7 +3,7 @@
 Importing `euroflood` installs a **quiet default** (see
 `_install_quiet_default`): structlog is routed through the standard library
 with a `NullHandler` on the ``euroflood`` logger, and pooch's own
-logger is quieted — so the library is **silent** unless you opt in. Call
+logger is quieted, so the library is **silent** unless you opt in. Call
 `setup_logging` to see logs (the CLI does this automatically). The quiet
 default is polite: it only configures structlog when the host application hasn't
 already, and it never touches the root logger.

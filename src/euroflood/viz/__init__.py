@@ -2,14 +2,14 @@
 
 Public entry points (also re-exported lazily from the top-level ``euroflood``):
 
-- `plot` / `explore` — dispatch on a ``FloodFrame``, a depth GeoTIFF
+- `plot` / `explore`: dispatch on a ``FloodFrame``, a depth GeoTIFF
   path, a list of paths, or a `DepthRaster`.
-- `plot_depth` / `explore_depth` — render an already-downloaded depth
+- `plot_depth` / `explore_depth`: render an already-downloaded depth
   raster (no download).
-- `open_depth` — wrap a depth GeoTIFF as a `DepthRaster`.
+- `open_depth`: wrap a depth GeoTIFF as a `DepthRaster`.
 
 The **default** view for a historic ``FloodFrame`` is the cheap flood-recurrence
-heatmap (no download). The depth raster — which requires downloading tiles — is
+heatmap (no download). The depth raster, which requires downloading tiles, is
 opt-in via ``depth=True`` and guarded by a row-count cap.
 
 All heavy imports (matplotlib/folium) are lazy; without the ``viz`` extra any
@@ -148,7 +148,7 @@ def plot_frame(
             frame, event_id=event_id, output_dir=output_dir, limit=limit
         )
         if n and "title" not in kwargs:
-            kwargs["title"] = f"Flood depth — max of {n} events"
+            kwargs["title"] = f"Flood depth: max of {n} events"
         kwargs.setdefault("scale", depth_scale_for(frame))  # cm (EFAS) vs m (hazard)
         return plot_depth(target, **kwargs)
     if footprints:
@@ -196,7 +196,7 @@ def plot(obj: Any, **kwargs: Any) -> Any:
         return plot_depth(obj, **kwargs)
     if isinstance(obj, list):
         if not obj:
-            raise VisualizationError("Empty path list — nothing to plot.")
+            raise VisualizationError("Empty path list: nothing to plot.")
         return plot_depth(obj[0], **kwargs)
     return plot_frame(obj, **kwargs)
 
@@ -209,6 +209,6 @@ def explore(obj: Any, **kwargs: Any) -> Any:
         return explore_depth(obj, **kwargs)
     if isinstance(obj, list):
         if not obj:
-            raise VisualizationError("Empty path list — nothing to explore.")
+            raise VisualizationError("Empty path list: nothing to explore.")
         return explore_depth(obj[0], **kwargs)
     return explore_frame(obj, **kwargs)

@@ -19,7 +19,7 @@
 # # 2. Discover & filter flood events
 #
 # `floods()` is the entry point for *discovery*. It resolves your area of interest, reads a
-# small window of the published index, and returns a **FloodFrame** — a
+# small window of the published index, and returns a **FloodFrame**: a
 # `geopandas.GeoDataFrame` with one row per historic flood event. It is cheap (a few MB, no
 # depth rasters), so you explore freely and only download later.
 #
@@ -49,7 +49,7 @@ ef.floods(point=(52.14, 6.20), radius_m=6000)  # a point (lat, lon) + a radius i
 # %% [markdown]
 # ### Cleaner ROIs with `shape=`
 #
-# Administrative boundaries are *legal* shapes, not hydrological ones — Zutphen's gemeente
+# Administrative boundaries are *legal* shapes, not hydrological ones. Zutphen's gemeente
 # boundary runs right down the IJssel, so the raw outline is jagged and cuts the river out.
 # Pass `shape="bbox"` (a bounding rectangle) or `shape="hull"` (the convex hull) to query a
 # clean ROI instead of the raw boundary; `buffer_m` still applies on top.
@@ -82,7 +82,7 @@ ef.floods("Zutphen, Netherlands", start="2024-01-01", end="2024-12-31")
 # %% [markdown]
 # ## It is a GeoDataFrame
 #
-# The result is a real GeoDataFrame, so the whole pandas / geopandas API is available — no new
+# The result is a real GeoDataFrame, so the whole pandas / geopandas API is available, with no new
 # query language to learn:
 
 # %%

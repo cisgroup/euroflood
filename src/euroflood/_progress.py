@@ -1,10 +1,10 @@
 """UI-agnostic progress reporting for the core pipelines.
 
 Pipelines report progress through `progress_bar`, a context manager that is
-a **no-op by default** — so ``import euroflood`` and library/API use stay silent
+a **no-op by default**, so ``import euroflood`` and library/API use stay silent
 and never import a UI library. The CLI injects a rich-backed factory via
 `set_factory` (``console.progress``), so long producer commands (``ingest``,
-``mirror``, ``export``) show a live bar on stdout — off the stderr log stream, so
+``mirror``, ``export``) show a live bar on stdout, off the stderr log stream, so
 logs never corrupt the bar.
 """
 
@@ -66,7 +66,7 @@ def progress_bar(
 # Unlike the CLI factory above, these render directly (no `set_factory` needed) so
 # `ef.floods(...).download()` and the first-query table mirror show progress in a
 # notebook. They are a no-op when not interactive, or when `settings.show_progress`
-# is off — so scripts, pipes, and CI (EUROFLOOD_SHOW_PROGRESS=0) stay clean. `rich`
+# is off, so scripts, pipes, and CI (EUROFLOOD_SHOW_PROGRESS=0) stay clean. `rich`
 # is a core dependency but imported lazily to keep `import euroflood` light.
 
 
@@ -133,7 +133,7 @@ def download_bar(description: str, total: int | None = None) -> Iterator[Advance
 def steps_bar(description: str, total: int | None = None) -> Iterator[Advance]:
     """Yield a per-item step handle (Spinner + M-of-N bar); no-op unless interactive.
 
-    Advances one step per completed item — used by the one-time index-table mirror
+    Advances one step per completed item, used by the one-time index-table mirror
     and by parallel downloads (where a cumulative byte bar would race across
     threads and a per-file count is clearer).
     """
@@ -176,8 +176,8 @@ def file_progress(
 ) -> Iterator[Advance]:
     """Per-file step bar for parallel downloads; advance one per completed file.
 
-    A no-op when ``enabled`` is False — i.e. the caller drives its own byte bar via
-    ``on_bytes`` (the CLI) — so two rich bars never fight over the terminal, and
+    A no-op when ``enabled`` is False, i.e. the caller drives its own byte bar via
+    ``on_bytes`` (the CLI), so two rich bars never fight over the terminal, and
     also (via `steps_bar`) when not interactive or progress is disabled.
     """
     if not enabled or not total:

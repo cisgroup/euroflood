@@ -35,8 +35,8 @@ def _parse_size(text: str) -> int | None:
 def _stable_global_id(filename: str) -> int:
     """Deterministic 32-bit id derived from the filename.
 
-    Hashing the filename (instead of using scrape order) keeps ``global_id`` —
-    and therefore every Parquet ``flood_id``, dictionary entry and index value —
+    Hashing the filename (instead of using scrape order) keeps ``global_id``
+    (and therefore every Parquet ``flood_id``, dictionary entry and index value)
     stable across re-scrapes, so ``ingest --update`` does not silently renumber
     and invalidate the existing cache. Fits uint32 (the ``flood_id`` dtype).
     """

@@ -1,6 +1,6 @@
 # FloodFrame
 
-`FloodFrame` is what [`floods()`](api.md) and [`hazard()`](api.md) return — a thin
+`FloodFrame` is what [`floods()`](api.md) and [`hazard()`](api.md) return, a thin
 `geopandas.GeoDataFrame` subclass (so all pandas/geopandas operations work) with a
 few convenience methods for downloading and visualizing the catalogue.
 

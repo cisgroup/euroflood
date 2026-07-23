@@ -8,7 +8,7 @@ reference.
 
 | You want to… | See |
 |---|---|
-| Discover events / hazard, download rasters | [API — floods, hazard, download](api.md) |
+| Discover events / hazard, download rasters | [API: floods, hazard, download](api.md) |
 | Work with the object a query returns | [FloodFrame](floodframe.md) |
 | Plot / explore / footprints / depth | [Visualization](visualization.md) |
 | Configure via `EUROFLOOD_*` env vars | [Configuration](configuration.md) |

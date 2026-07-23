@@ -145,7 +145,7 @@ def stamp_manifest(
     builds the bundle with placeholder ``source_urls`` (null) and calls this to stamp
     the real values into ``manifest.json`` before re-uploading it. ``source_urls`` is
     *merged* (only the given keys change), so stamping one host's URL/DOI preserves
-    another's already recorded — e.g. a later Zenodo publish keeps the Source
+    another's already recorded, e.g. a later Zenodo publish keeps the Source
     Cooperative URL. Checksums, provenance, and the grid fingerprint are preserved.
 
     Returns the updated manifest document.

@@ -18,8 +18,8 @@
 # %% [markdown]
 # # 6. Quantitative analysis
 #
-# Once the depth rasters are on disk, EuroFlood turns them into numbers — per-event and
-# aggregated — so you can rank events, estimate exposure, and compare flooding across years, all
+# Once the depth rasters are on disk, EuroFlood turns them into numbers (per-event and
+# aggregated) so you can rank events, estimate exposure, and compare flooding across years, all
 # without leaving Python.
 #
 # > This tutorial downloads real rasters, so it needs network access.
@@ -31,7 +31,7 @@ import euroflood as ef
 
 ef.settings.output_dir = Path("out")
 
-# Download the depth rasters for the six largest events — enough to compare, and quick.
+# Download the depth rasters for the six largest events, enough to compare, and quick.
 # (Drop the `.head(6)` to analyse every event; a download progress bar shows while it runs.)
 cat = ef.floods("Zutphen, Netherlands", shape="bbox")  # bbox ROI (tutorial 02)
 dl = cat.sort_values("area_km2", ascending=False).head(6).download()
@@ -51,7 +51,7 @@ stats = dl.stats()
 stats
 
 # %% [markdown]
-# It is an ordinary DataFrame — rank the events by how much water they moved:
+# It is an ordinary DataFrame. Rank the events by how much water they moved:
 
 # %%
 stats.sort_values("volume_Mm3", ascending=False)[
@@ -66,7 +66,7 @@ ax = stats.sort_values("date").plot.bar(
     x="date",
     y="max_depth_m",
     legend=False,
-    title="Peak flood depth per event — Zutphen",
+    title="Peak flood depth per event: Zutphen",
 )
 ax.set_ylabel("max depth (m)")
 
@@ -74,7 +74,7 @@ ax.set_ylabel("max depth (m)")
 # ## The aggregate envelope
 #
 # `.summary()` combines every downloaded raster into a per-pixel **maximum** composite (so
-# overlapping floods are counted once) and returns the same measures plus `n_events` — the
+# overlapping floods are counted once) and returns the same measures plus `n_events`, the
 # "worst case seen" across the whole record:
 
 # %%
@@ -83,7 +83,7 @@ dl.summary()
 # %% [markdown]
 # ## The depth distribution of one event
 #
-# Read a single raster and look at where the water actually was — most flooded cells are shallow,
+# Read a single raster and look at where the water actually was. Most flooded cells are shallow,
 # with a thin tail of deep water:
 
 # %%

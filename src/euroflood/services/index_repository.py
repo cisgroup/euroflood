@@ -4,12 +4,12 @@ Three deployment modes (``settings.index_mode``):
 
 - ``auto`` (default): use a complete local bundle if one is present, otherwise read the
   hosted index (the zero-config ``pip install`` path).
-- ``local``: only ever read ``cache_dir`` — the HPC / full-mirror / offline path.
+- ``local``: only ever read ``cache_dir``: the HPC / full-mirror / offline path.
 - ``remote``: always use the hosted index (still preferring any file already cached).
 
 When the hosted index is used, the small tables (the ~14 MB dictionary + ``events.parquet``
 + metadata + manifest) are **mirrored to the cache once, on first use** (hash-verified via
-`pooch`), and the big COG is **streamed** via GDAL ``/vsicurl`` — only a query's ROI
+`pooch`), and the big COG is **streamed** via GDAL ``/vsicurl``: only a query's ROI
 tiles are fetched, never the whole file. The base URL is the configured
 ``index_base_url`` or the baked `DEFAULT_INDEX_BASE_URL`; the
 manifest's ``files`` map (with per-file SHA-256) is the authoritative artifact list.
@@ -102,7 +102,7 @@ class IndexRepository:
         the open handle lets a repeat ``floods()`` in one process reuse it (and GDAL's
         in-process block cache), so the second query is near-instant instead of paying the
         re-open. Local COGs are cached too (cheap, harmless). Callers must **not** close the
-        returned dataset — use `close_cached_datasets` to release the cache.
+        returned dataset. Use `close_cached_datasets` to release the cache.
         """
         import rasterio
 

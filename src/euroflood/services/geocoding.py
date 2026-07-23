@@ -42,7 +42,7 @@ logger = structlog.get_logger(__name__)
 _NAME_COLUMNS = ("NAME_LATN", "NUTS_NAME", "NAME", "name")
 
 # Common exonyms -> the endonym the NUTS dataset actually stores (both normalized).
-# Only the query side needs these — bilingual names ("Valencia/València") and
+# Only the query side needs these: bilingual names ("Valencia/València") and
 # suffixed ones ("München, Kreisfreie Stadt") are already resolved from the data by
 # the variant index. Each endonym here is a real NUTS variant (a test guards the
 # ones present in the committed fixture); no lightweight exonym library exists
@@ -144,10 +144,10 @@ class GeocodingService:
 
     The backend is chosen by ``settings.geocoder_backend``:
 
-    - ``"online_first"`` (default) — query OpenStreetMap Nominatim, then fall back
+    - ``"online_first"`` (default): query OpenStreetMap Nominatim, then fall back
       to the offline Eurostat NUTS dataset on any network failure or empty result.
-    - ``"nominatim"`` — online only (no offline fallback).
-    - ``"local"`` — the offline NUTS dataset only (fully offline). Tolerant of
+    - ``"nominatim"``: online only (no offline fallback).
+    - ``"local"``: the offline NUTS dataset only (fully offline). Tolerant of
       accents/case, bilingual and suffixed names, common exonyms, and close typos.
 
     Attributes:
@@ -320,7 +320,7 @@ class GeocodingService:
 
         Matching is tolerant of accents/case, bilingual and suffixed NUTS names
         (``Valencia/València``, ``München, Kreisfreie Stadt``), common exonyms
-        (``Cologne``->``Köln``), and very close typos — but a real miss still raises.
+        (``Cologne``->``Köln``), and very close typos, but a real miss still raises.
         """
         gdf = self._load_dataset()
         target = _normalize(query.split(",")[0])

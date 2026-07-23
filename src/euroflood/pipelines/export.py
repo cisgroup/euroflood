@@ -49,7 +49,7 @@ def export_plan(settings: Settings | None = None) -> dict[str, Any]:
     """Side-effect-free summary of what the export would build (for --dry-run).
 
     Reports the Parquet file count, the populated-cell count, and the output
-    paths — without opening the pipeline's DuckDB file or building anything.
+    paths, without opening the pipeline's DuckDB file or building anything.
     """
     settings = settings or get_settings()
     pdir = settings.cache_dir / "parquet"
@@ -125,7 +125,7 @@ class ExportPipeline:
         try:
             # 1. Materialize raw_pixels ONCE (TABLE, not VIEW): group every flood_id
             #    at a cell into a canonical sorted list. (A VIEW would re-run this
-            #    GROUP BY for every raster write-band — the old ~35x bottleneck.)
+            #    GROUP BY for every raster write-band: the old ~35x bottleneck.)
             self.con.execute(
                 f"""
                 CREATE OR REPLACE TABLE raw_pixels AS
@@ -235,7 +235,7 @@ class ExportPipeline:
     def _cogify(self, src_path: Any, out_path: Any) -> None:
         """Reorder the tiled BigTIFF into a true COG (overviews + sparse) atomically.
 
-        Uses the GDAL COG driver (via rasterio) — NOT rio-cogeo, which unpacks the
+        Uses the GDAL COG driver (via rasterio), NOT rio-cogeo, which unpacks the
         whole raster in memory at this scale. NEAREST resampling because combo_id is
         categorical (averaging ids is meaningless).
         """
@@ -304,7 +304,7 @@ class ExportPipeline:
         """
         events_path = self.settings.get_events_path()
         # Distinct events actually present in the index (via the small combinations
-        # table, NOT the 82.5 M-row raw_pixels — an order of magnitude cheaper).
+        # table, NOT the 82.5 M-row raw_pixels, an order of magnitude cheaper).
         present = "SELECT DISTINCT fid FROM combinations, UNNEST(flood_ids) AS t(fid)"
         inv_path = self.settings.get_inventory_path()
         if inv_path.exists():

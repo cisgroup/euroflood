@@ -1,5 +1,5 @@
 site_name: EuroFlood
-site_description: Query Europe's satellite flood-depth maps as GeoDataFrames — in a few lines.
+site_description: Query Europe's satellite flood-depth maps as GeoDataFrames, in a few lines.
 site_author: Jürgen Hackl
 site_url: https://cisgroup.github.io/euroflood/
 repo_url: https://github.com/cisgroup/euroflood
@@ -37,7 +37,7 @@ theme:
         name: Switch to light mode
     - media: "(prefers-color-scheme: light)"
       scheme: default
-      primary: custom # EuroFlood azure — see docs/stylesheets/extra.css
+      primary: custom # EuroFlood azure (see docs/stylesheets/extra.css)
       accent: custom
       toggle:
         icon: material/weather-sunny
@@ -53,6 +53,10 @@ theme:
 extra_css:
   - stylesheets/extra.css
 
+# Injects the installed euroflood version into the footer (see scripts/mkdocs_hooks.py).
+hooks:
+  - scripts/mkdocs_hooks.py
+
 extra:
   social:
     - icon: fontawesome/brands/github
@@ -60,7 +64,7 @@ extra:
       name: EuroFlood on GitHub
 
 # Keep the tutorials' jupytext .py sources and their run artifacts (zutphen.*, out/…)
-# out of the built site — the docs/tutorials symlink to examples/ would otherwise
+# out of the built site; the docs/tutorials symlink to examples/ would otherwise
 # serve them as raw static files.
 exclude_docs: |
   *.py
@@ -140,6 +144,14 @@ nav:
       - Hazard: tutorials/05_hazard.ipynb
       - Quantitative analysis: tutorials/06_analysis.ipynb
       - CLI & configuration: tutorials/07_cli_and_config.ipynb
+  - Case studies:
+      - case-studies/README.md
+      - Storm Boris (transboundary): case-studies/01_boris_transboundary.ipynb
+      - A decade at Zutphen: case-studies/02_zutphen_decade.ipynb
+      - Shannon callows (exposure): case-studies/03_shannon_callows.ipynb
+      - Valencia DANA (detectability): case-studies/04_valencia_dana.ipynb
+      - Baltic surge (coastal): case-studies/05_baltic_surge.ipynb
+      - Continental recurrence: case-studies/06_continental_recurrence.ipynb
   - Concepts: concepts.md
   - API reference:
       - reference/index.md
@@ -153,3 +165,4 @@ nav:
           - Services: reference/services.md
           - Core: reference/core.md
       - Building the index (producers): hpc-runbook.md
+  - Citing EuroFlood: citation.md

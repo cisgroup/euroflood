@@ -27,7 +27,7 @@ from ..services.zenodo import ZenodoPublisher
 
 logger = structlog.get_logger(__name__)
 
-# The source dataset this index is derived from — attribution required (CC-BY-4.0).
+# The source dataset this index is derived from: attribution required (CC-BY-4.0).
 JRC_SOURCE_URL = (
     "https://data.jrc.ec.europa.eu/dataset/0bc96690-b89c-4909-9166-c2c322a20130"
 )
@@ -126,8 +126,8 @@ def build_readme(
         .read_text(encoding="utf-8")
     )
     doi_line = (
-        f"- **Cite:** [{zenodo_concept_doi}](https://doi.org/{zenodo_concept_doi}) "
-        "— the citable Zenodo archive (all versions)"
+        f"- **Cite:** [{zenodo_concept_doi}](https://doi.org/{zenodo_concept_doi})"
+        ", the citable Zenodo archive (all versions)"
         if zenodo_concept_doi
         else ""
     )

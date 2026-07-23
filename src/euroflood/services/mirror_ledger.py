@@ -2,7 +2,7 @@
 
 A *mirror ledger* records, per cached raster, its ``sha256`` + ``size_bytes`` (and a
 little provenance) so a later run can (a) skip / re-fetch corrupt files by size and
-(b) answer "is my local mirror complete and uncorrupt for this region?" — the
+(b) answer "is my local mirror complete and uncorrupt for this region?", the
 ``verify`` readiness check. Both collections reuse this: the hazard ledger lives in
 ``hazard_manifest.json`` (under a ``mirror`` key, alongside the frozen reference
 provenance), the flood ledger in a dedicated ``floods_mirror.json``.

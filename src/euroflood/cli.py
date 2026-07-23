@@ -261,7 +261,7 @@ def fetch_sources(
     """Download ALL raw source flood-map tiles to the cache (producer; ~35 GB).
 
     The stable "download first, then process" path for the full archive, used to
-    *build* the index. Not a consumer offline command — for that use ``mirror``.
+    *build* the index. Not a consumer offline command. For that use ``mirror``.
     Re-running skips files already present; ``--verify`` re-fetches any whose
     on-disk size doesn't match the JRC listing; a later ``ingest`` only processes
     the cached files.

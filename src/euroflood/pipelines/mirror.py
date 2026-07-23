@@ -1,6 +1,6 @@
 """Pipeline: download-only mirror of the JRC source flood-map tiles.
 
-Downloads every source tile to the local cache **without** processing them — the
+Downloads every source tile to the local cache **without** processing them: the
 stable "download first, then process" workflow for large bulk fetches (the full
 EFAS archive is ~35 GB across ~3,280 tiles). It is resumable (already-present
 files are skipped via the download cache), tracks state in a ledger (with a

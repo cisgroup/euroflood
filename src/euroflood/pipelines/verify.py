@@ -7,7 +7,7 @@ SHA-256 match the manifest, the COG opens and streams a window via GDAL ``/vsicu
 
 The same helper powers three call sites: the post-upload check inside
 ``publish --source-coop``, the ``euroflood verify-remote`` CLI, and the opt-in ``online``
-test — so what we publish is always checked the way users will read it.
+test, so what we publish is always checked the way users will read it.
 """
 
 from __future__ import annotations

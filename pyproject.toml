@@ -1,6 +1,6 @@
 [project]
 name = "euroflood"
-version = "0.2.0"
+version = "0.2.1"
 description = "Processing toolkit for European Satellite-Derived Flood Depth Maps (JRC/CEMS-EFAS): ingest, index, and extract flood data."
 authors = [
     {name = "Jürgen Hackl", email = "hackl@princeton.edu"}
@@ -82,6 +82,16 @@ build-backend = "hatchling.build"
 [tool.hatch.build.targets.wheel]
 packages = ["src/euroflood"]
 
+[tool.hatch.build.targets.sdist]
+# Keep the published sdist lean. The case-study notebooks (~18 MB of embedded
+# interactive maps) and the vendored paper figures ship to GitHub and the docs site,
+# but are excluded here so the PyPI sdist stays small. The wheel is already src-only
+# (see the wheel target above), so `pip install euroflood` never carries them.
+exclude = [
+  "case_studies",
+  "docs/images/paper",
+]
+
 [dependency-groups]
 dev = [
     "boto3>=1.35",
@@ -114,7 +124,9 @@ line-length = 88
 target-version = "py313"
 src = ["src", "tests"]
 # Notebooks are rendered via jupytext-paired .py files; exclude the .ipynb themselves.
-extend-exclude = ["*.ipynb"]
+# `case_studies/` holds paper notebooks reproduced verbatim (100-col, not maintained
+# here) — excluded from both the formatter and the linter.
+extend-exclude = ["*.ipynb", "case_studies"]
 
 [tool.ruff.lint]
 # E/F/I/UP/B enforced; D (docstrings) and SIM start advisory (see CI) then promote.
@@ -174,6 +186,9 @@ ignore_missing_imports = true
 
 [tool.deptry]
 known_first_party = ["euroflood"]
+# Case-study notebooks are reproduced from the paper and import IPython (a dev-group
+# transitive) for display; they are not part of the package, so skip them.
+extend_exclude = ["case_studies"]
 
 [tool.deptry.per_rule_ignores]
 # These viz deps are loaded lazily via importlib (euroflood.viz._deps.require) or a
@@ -185,6 +200,9 @@ DEP002 = ["folium", "contextily", "ipywidgets"]
 [tool.pytest.ini_options]
 minversion = "9.0"
 testpaths = ["tests"]
+# `case_studies/` holds render-only paper notebooks (not runnable in CI); never
+# collect them, even under a stray `pytest --nbmake .`.
+norecursedirs = ["case_studies"]
 addopts = "-ra --strict-markers --strict-config"
 markers = [
     "integration: end-to-end tests that may touch heavier IO",

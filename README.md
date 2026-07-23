@@ -9,32 +9,32 @@
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21284459.svg)](https://doi.org/10.5281/zenodo.21284459)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
-**Query Europe's observed satellite flood-depth maps by place and time — lightweight, cloud-native, `pip`-installable.**
+**Query Europe's observed satellite flood-depth maps by place and time: lightweight, cloud-native, `pip`-installable.**
 
 <p align="center">
   <a href="https://cisgroup.github.io/euroflood/">
     <picture>
       <source media="(prefers-color-scheme: dark)" srcset="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/hero-dark.png">
-      <img src="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/hero.png" width="760" alt="EuroFlood — flood-recurrence map of Zutphen on the river IJssel, over a grayscale basemap" />
+      <img src="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/hero.png" width="760" alt="EuroFlood: flood-recurrence map of Zutphen on the river IJssel, over a grayscale basemap" />
     </picture>
   </a>
 </p>
 
-<p align="center"><em>Flood-recurrence over Zutphen (river IJssel) — how often each ~90&nbsp;m pixel flooded, 2015–2024, straight from the index.</em></p>
+<p align="center"><em>Flood-recurrence over Zutphen (river IJssel): how often each ~90&nbsp;m pixel flooded, 2015–2024, straight from the index.</em></p>
 
 EuroFlood is a data-access tool for the JRC / Copernicus **CEMS-EFAS Satellite-Derived
-Flood Depth Maps for Europe** (Betterle & Salamon, 2025) — ~3,280 observed, Sentinel-1-derived
+Flood Depth Maps for Europe**: ~3,280 observed, Sentinel-1-derived
 flood-depth maps across Europe, 2015–2024. The source is published only as an un-indexed bulk
 FTP archive; EuroFlood turns it into a **queryable index** so you can *discover* which flood
 events touched a region (and when) and *extract* only the depth rasters you actually need.
 
 It follows a **Discover → Extract** model:
 
-- **Discover** — `floods("Zutphen, Netherlands")` streams a compact index (a Cloud-Optimized GeoTIFF read a
+- **Discover**: `floods("Zutphen, Netherlands")` streams a compact index (a Cloud-Optimized GeoTIFF read a
   window at a time via `/vsicurl`, plus a small sorted GeoParquet dictionary cached on first use)
-  and returns a `GeoDataFrame` of matching flood events — transferring a few MB, never the whole
+  and returns a `GeoDataFrame` of matching flood events, transferring a few MB, never the whole
   archive.
-- **Extract** — `.download("out/")` fetches and crops only the source depth GeoTIFFs for the
+- **Extract**: `.download("out/")` fetches and crops only the source depth GeoTIFFs for the
   events you selected.
 
 It also exposes the global **CEMS-GLOFAS** modelled flood-hazard maps via `hazard()`.
@@ -69,12 +69,12 @@ euroflood hazard "Zutphen, Netherlands" -r 100 --download --out hazard/
 ```
 
 > New to EuroFlood? Work through the runnable
-> **[tutorials](https://cisgroup.github.io/euroflood/tutorials/)** — Quickstart →
+> **[tutorials](https://cisgroup.github.io/euroflood/tutorials/)**: Quickstart →
 > Discover & filter → Visualize → Download & measure → Hazard.
 
 ## Visualize (optional `[viz]` extra)
 
-`pip install "euroflood[viz]"` adds plotting — flood-recurrence and per-event
+`pip install "euroflood[viz]"` adds plotting: flood-recurrence and per-event
 footprints straight from the index (no download), plus the downloaded depth maps:
 
 ```python
@@ -86,15 +86,16 @@ cat.head(3).download().plot(depth=True)    # fetch + render the actual depth ras
 ```
 
 <p align="center">
-  <img src="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/footprints.png" width="45%" alt="Per-event flood extents (footprints)" />
-  <img src="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/depth.png" width="45%" alt="Downloaded flood-depth map" />
+  <img src="https://raw.githubusercontent.com/cisgroup/euroflood/main/docs/images/paper/fig-zutphen-multi.png" width="760" alt="A decade of flooding at Zutphen: per-cell recurrence, per-event depth, and observed depths on the modelled return-period curve" />
 </p>
+
+<p align="center"><em>A decade at Zutphen: per-cell recurrence, per-event depth, and observed depths against the modelled CEMS-GLOFAS return-period curve (see the <a href="https://cisgroup.github.io/euroflood/case-studies/02_zutphen_decade/">case study</a>).</em></p>
 
 See the [Visualize tutorial](https://cisgroup.github.io/euroflood/tutorials/03_visualize/).
 
 ## How the data is served
 
-- **Zero-config (default):** the published index is read remotely — the COG streams via
+- **Zero-config (default):** the published index is read remotely: the COG streams via
   `/vsicurl` and the ~14 MB dictionary + events table are cached locally on first use
   (SHA-256-verified). Set `EUROFLOOD_INDEX_MODE=local` to only ever use a local copy.
 - **Offline / HPC:** `euroflood mirror all --bbox <…> -r 100` stages a region's catalogue,
@@ -111,11 +112,13 @@ Eurostat NUTS dataset); set `EUROFLOOD_GEOCODER_BACKEND=local` to stay fully off
 
 **Full docs: <https://cisgroup.github.io/euroflood/>**
 
-- [Getting Started](https://cisgroup.github.io/euroflood/getting-started/) —
+- [Getting Started](https://cisgroup.github.io/euroflood/getting-started/):
   install and run your first query.
-- [Tutorials](https://cisgroup.github.io/euroflood/tutorials/) — runnable,
+- [Tutorials](https://cisgroup.github.io/euroflood/tutorials/): runnable,
   progressive notebooks (Quickstart → Hazard).
-- [Concepts](https://cisgroup.github.io/euroflood/concepts/) — how the index
+- [Case studies](https://cisgroup.github.io/euroflood/case-studies/): real-world flood
+  analyses on genuine events across Europe (Storm Boris, the Valencia DANA, and more).
+- [Concepts](https://cisgroup.github.io/euroflood/concepts/): how the index
   works (the data model in one page).
 - [API Reference](https://cisgroup.github.io/euroflood/reference/) ·
   [HPC runbook](https://cisgroup.github.io/euroflood/hpc-runbook/)
@@ -126,11 +129,9 @@ EuroFlood **code** is licensed under the **MIT License**.
 
 The **index and the underlying flood-depth maps** are derived from the JRC / Copernicus
 CEMS-EFAS *Satellite-Derived Flood Depth Maps for Europe* and are licensed **CC-BY-4.0**.
-If you use EuroFlood's data, please cite the source:
 
-> Betterle, A. & Salamon, P. (2025). *Satellite-Derived Flood Depth Maps for Europe.*
-> European Commission, Joint Research Centre (JRC) / Copernicus Emergency Management Service.
-> <https://data.jrc.ec.europa.eu/dataset/0bc96690-b89c-4909-9166-c2c322a20130>
+For how to cite EuroFlood (the software, the index dataset, the source data, and the paper
+reproduction package), see [**Citing EuroFlood**](https://cisgroup.github.io/euroflood/citation/).
 
 Developed at Princeton University (Complex Infrastructure Systems Group).
 

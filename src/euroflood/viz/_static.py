@@ -74,7 +74,7 @@ def _add_basemap(ax: Any, *, tiles: str = "OpenStreetMap") -> None:
 
 def _recurrence_title(event_id: int | None) -> str:
     if event_id is not None:
-        return f"Flood footprint — event {event_id}"
+        return f"Flood footprint: event {event_id}"
     return "Flood recurrence (recorded floods per pixel)"
 
 
@@ -93,7 +93,7 @@ def plot_recurrence(
     """Plot the flood-recurrence heatmap for a historic catalogue's ROI.
 
     Darker = more recorded floods. Never-flooded pixels (0) are transparent. No
-    source raster is downloaded — the counts come from the index.
+    source raster is downloaded: the counts come from the index.
 
     Returns:
         The matplotlib ``Axes``.
@@ -235,7 +235,7 @@ def plot_depth(
         ax.figure.colorbar(images[0], ax=ax, label="Water depth (m)")
     if basemap:
         _add_basemap(ax, tiles=tiles)
-    ax.set_title(title or f"Flood depth — {Path(path).stem}")
+    ax.set_title(title or f"Flood depth: {Path(path).stem}")
     return ax
 
 
@@ -243,8 +243,8 @@ def _context_title(frame: Any) -> str:
     n = len(frame)
     if is_hazard(frame):
         rps = sorted({int(r) for r in frame["return_period"].tolist()}) if n else []
-        return f"Hazard layers — RP {', '.join(map(str, rps))} yr" if rps else "Hazard"
-    return f"Flood catalogue — {n} event(s)"
+        return f"Hazard layers: RP {', '.join(map(str, rps))} yr" if rps else "Hazard"
+    return f"Flood catalogue: {n} event(s)"
 
 
 def plot_context(

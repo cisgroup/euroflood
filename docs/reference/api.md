@@ -1,4 +1,4 @@
-# API — floods, hazard, download
+# API: floods, hazard, download
 
 The top-level functions for discovering flood events and hazard layers and fetching
 their rasters. All are re-exported from `euroflood` (e.g. `euroflood.floods`).

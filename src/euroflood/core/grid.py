@@ -3,7 +3,7 @@
 All source maps are resampled onto one lat/lon grid (EPSG:4326, ~90 m pixels)
 covering Europe, so "the same place" is "the same ``(row, col)`` pixel" across
 every event. That stable addressing is what lets the sparse index encode, per
-pixel, the *set* of events that flooded it (a ``combo_id``) — see
+pixel, the *set* of events that flooded it (a ``combo_id``). See
 `export` and the Concepts page in the docs.
 """
 

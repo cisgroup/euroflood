@@ -170,7 +170,7 @@ class IngestionPipeline:
             update (bool): If True, forces a fresh scrape of the JRC website to update
                 `inventory.csv` before processing starts. Defaults to False.
             limit (Optional[int]): If set, only the first N tiles (stable order) are
-                handled — for small test runs. Defaults to None (all).
+                handled, for small test runs. Defaults to None (all).
 
         Process:
             1.  **Inventory Check**: Loads the CSV. If empty or `update=True`, runs scraping.

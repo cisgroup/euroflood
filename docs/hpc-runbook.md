@@ -1,12 +1,12 @@
 # Building the index (producers)
 
 !!! note "Most users never need this"
-    The published index is read remotely with zero setup — this page is only for
+    The published index is read remotely with zero setup. This page is only for
     **producers** rebuilding the full-scale index from the source archive.
 
 This is the end-to-end recipe for building the real, full-scale historic flood index
-on an HPC cluster and producing the **deployable bundle** — a single COG + a
-partitioned-Parquet dictionary + events table + a checksummed manifest — that
+on an HPC cluster and producing the **deployable bundle** (a single COG + a
+partitioned-Parquet dictionary + events table + a checksummed manifest) that
 `euroflood publish` uploads to Source Cooperative (and optionally mints a Zenodo DOI).
 
 The index grid is **131,760 × 69,720 px (~9.18 billion pixels, ~37 GB uint32)** but
@@ -17,7 +17,7 @@ parallel; the reduce/build runs on one fat node.
 
 Della **compute nodes have no internet**, so the work splits cleanly: **download
 where there's internet, process where there's compute.** Three ready scripts live
-in `scripts/slurm/` — edit the `/scratch/gpfs/<GROUP>/$USER` path and `--mail-user`
+in `scripts/slurm/`. Edit the `/scratch/gpfs/<GROUP>/$USER` path and `--mail-user`
 for your group/NetID.
 
 | Step | Where | Script |
@@ -27,7 +27,7 @@ for your group/NetID.
 | 3. Build the index COG (offline) | `cpu` partition (SLURM) | `della_build_index.sbatch` |
 
 ```bash
-# 1) on a visualization node (internet) — also warms the uv cache + builds .venv
+# 1) on a visualization node (internet), also warms the uv cache + builds .venv
 ssh <NetID>@della-vis1.princeton.edu
 cd /scratch/gpfs/<GROUP>/$USER/euroflood
 tmux new -s mirror && bash scripts/slurm/della_mirror.sh   # tmux survives disconnects
@@ -54,7 +54,7 @@ Why this shape (per the [Princeton RC docs](https://researchcomputing.princeton.
   process, `GDAL_NUM_THREADS=ALL_CPUS`).
 - **Bounded memory (why 64 G is enough)** → the tiles are mostly-nodata uint16 masks that
   decompress ~1000x (~10 MB on disk → up to ~20 GB in RAM), so `ingest` reads each raster in
-  row stripes and caps the per-process GDAL block cache (`GDAL_CACHEMAX=256`) — measured peak
+  row stripes and caps the per-process GDAL block cache (`GDAL_CACHEMAX=256`): measured peak
   ~14 GB across 32 workers on a real Della run. Without both, 32 whole-tile reads OOM'd even
   at 256 G.
 - rasterio's wheels bundle GDAL ≥ 3.8 → the COG driver works with **no `module load`**.
@@ -82,7 +82,7 @@ uv run euroflood ingest --year 2020        # scrapes inventory.csv, ingests 2020
 
 For large bulk fetches it's more robust to **download all source tiles first**, then
 process from the local cache. The full EFAS archive is **~35 GB across ~3,280 tiles**
-(mostly-nodata uint16 masks: ~10 MB compressed but up to ~20 GB uncompressed — `ingest`
+(mostly-nodata uint16 masks: ~10 MB compressed but up to ~20 GB uncompressed; `ingest`
 streams them in row stripes so RAM stays bounded).
 
 ```bash
@@ -94,7 +94,7 @@ euroflood fetch-sources --retry-failed   # re-attempt only the dead-letter list
 `fetch-sources` (the producer bulk download, formerly `mirror`) is resumable (skips files
 already present), ledger-tracked (`mirror_*.jsonl` + a `failed_mirror_*.json` dead-letter),
 and download-only. A subsequent `ingest` cache-hits every downloaded file and just processes
-it. (For the *consumer* offline mirror — staging a published region for offline use — see
+it. (For the *consumer* offline mirror, staging a published region for offline use, see
 `euroflood mirror` / `verify` below.)
 
 ### Offline consumer mirror (compute nodes)
@@ -103,7 +103,7 @@ To run `floods()`/`hazard()` on an offline node, stage the layers you need on a 
 node, then flip the compute node offline:
 
 ```bash
-# networked login node — stage a region (index + flood depths + hazard tiles):
+# networked login node, stage a region (index + flood depths + hazard tiles):
 euroflood mirror all --bbox 6.1 52.0 6.3 52.2 -r 100
 euroflood verify all --bbox 6.1 52.0 6.3 52.2 -r 100 --deep   # readiness gate
 
@@ -129,7 +129,7 @@ proven path:
 sbatch scripts/slurm/della_ingest.sbatch     # 32 workers; all years, offline cache-hits
 ```
 
-For clusters where one node isn't enough, the CLI shards (scheduler-agnostic) — each
+For clusters where one node isn't enough, the CLI shards (scheduler-agnostic): each
 shard is deterministic (`global_id % shard_count == shard_index`) and writes
 globally-unique Parquet to the shared lake, so there's **no merge step**. Roll your own
 SLURM array around it:
@@ -185,7 +185,7 @@ uv run euroflood doctor
 The doctor checks the COG is a valid tiled COG with overviews + `nodata=0`, the
 grid fingerprint matches the code, the manifest checksums match on disk, and
 sampled combo_ids resolve in the dictionary. It also **reports** the populated-cell
-count N, the COG size, and what an equivalent sparse-Parquet table would be — so
+count N, the COG size, and what an equivalent sparse-Parquet table would be, so
 the COG-vs-table storage choice can be revisited empirically once N is known.
 
 ## 5. Hazard (reference, no copies)
@@ -201,7 +201,7 @@ uv run euroflood build-hazard-manifest     # writes hazard/hazard_manifest.json
 
 The bundle + manifests are now ready to publish. `euroflood publish` uploads them to
 **Source Cooperative** (the `/vsicurl`-queryable live host) and, optionally, mints a
-citable **Zenodo** DOI — stamping both into the manifest's `source_urls`:
+citable **Zenodo** DOI, stamping both into the manifest's `source_urls`:
 
 ```bash
 euroflood publish --source-coop --version 1.0.0   # live host (needs AWS temp creds in .env)

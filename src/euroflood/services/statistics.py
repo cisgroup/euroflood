@@ -1,11 +1,11 @@
 """Flood statistics derived from downloaded depth rasters.
 
 Turns a downloaded flood-depth GeoTIFF (or a whole catalogue's worth) into
-headline numbers — how deep, how large an area, how much water. Depth is read in
+headline numbers: how deep, how large an area, how much water. Depth is read in
 a **metric** CRS so that a pixel's ground area is known in metres:
 
 - If the raster is already projected in metres (the EFAS depth case, a per-tile
-  azimuthal-equidistant grid) it is used **as-is** — no resampling, so the depth
+  azimuthal-equidistant grid) it is used **as-is** (no resampling), so the depth
   values are exact.
 - If it is stored in geographic (degree) coordinates it is reprojected to an
   equal-area CRS (EPSG:6933) with **nearest** resampling (values preserved).
@@ -41,7 +41,7 @@ _HISTORIC_SCALE = 0.01
 _HAZARD_SCALE = 1.0
 
 _NO_DOWNLOADS_MSG = (
-    "No downloaded rasters — call .download() first (e.g. ef.floods(...).download())."
+    "No downloaded rasters. Call .download() first (e.g. ef.floods(...).download())."
 )
 
 
@@ -72,7 +72,7 @@ def depth_raster_stats(
         (million m³). An all-dry raster yields zeros.
     """
     # Inspect the CRS from the header first (no band read) so the raster is read
-    # exactly once — reprojected to a metric grid only if it is geographic.
+    # exactly once, reprojected to a metric grid only if it is geographic.
     src_crs = RasterOps.crs_of(path)
     if src_crs is not None and src_crs.is_geographic:
         arr, transform, _crs, nodata = RasterOps.read_array(

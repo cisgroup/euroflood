@@ -133,12 +133,12 @@ def _tile_sources(
     Offline (``hazard_mode='local'`` or ``offline``): reads only the local tile
     cache and never touches the network; a missing tile is a remediable
     ``HazardError`` pointing at ``euroflood mirror hazard`` (``hazard_cache_tiles``
-    is ignored — ``/vsicurl`` would be a network read).
+    is ignored: ``/vsicurl`` would be a network read).
 
     Otherwise fails closed: if any required tile cannot be fetched, a ``HazardError``
     is raised rather than silently dropping it. Mosaicking only the tiles that
     happened to succeed would otherwise yield a hazard raster covering just part of
-    the ROI — returned with no error and a valid-looking GeoTIFF — which silently
+    the ROI, returned with no error and a valid-looking GeoTIFF, which silently
     corrupts any ROI spanning more than one GLOFAS tile whenever a single (often
     transient) tile fetch fails. ``DownloadService`` already retries each tile with
     exponential backoff, so a raise here means the tile is persistently unavailable.
@@ -178,7 +178,7 @@ def _tile_sources(
         raise HazardError(
             f"Incomplete hazard tile set: {len(missing)} of {len(tiles)} tiles "
             f"failed to download ({', '.join(missing)}). Refusing to build a "
-            "truncated hazard raster for the ROI — retry (JRC tile fetches can fail "
+            "truncated hazard raster for the ROI, retry (JRC tile fetches can fail "
             "transiently) or set hazard_cache_tiles=False to stream via /vsicurl."
         )
     return [str(p) for p in fetched if p is not None]
@@ -212,7 +212,7 @@ class HazardPipeline:
     ) -> FloodFrame:
         """Query GLOFAS hazard tiles for a region -> a FloodFrame (no rasters fetched).
 
-        Backs `hazard` — see it for the argument reference.
+        Backs `hazard`. See it for the argument reference.
         ``output_dir`` is the directory the cached-download auto-detect scans
         (defaults to ``settings.output_dir``).
 
@@ -295,7 +295,7 @@ def download_hazard_catalogue(
     One output GeoTIFF per row (per return period): the intersecting tiles are
     resolved from the row's ROI, read (from the cache or via ``/vsicurl`` per
     ``settings.hazard_cache_tiles``), merged over the ROI window, and cropped to
-    the ROI polygon. Outputs are cached — a row whose GeoTIFF already exists is
+    the ROI polygon. Outputs are cached: a row whose GeoTIFF already exists is
     reused unless ``force=True``.
 
     Args:
@@ -359,7 +359,7 @@ def download_hazard_catalogue(
                 # instead of treating it as a skippable partial-tile set.
                 if settings.offline_hazard:
                     raise
-                # Online per-return-period fail-closed: skip this RP (write nothing —
+                # Online per-return-period fail-closed: skip this RP (write nothing:
                 # an absent raster is honest and is not the silent truncation of #25)
                 # rather than aborting the whole sweep, so a transient failure on one
                 # RP does not discard the complete sibling RPs. A total failure is
@@ -399,7 +399,7 @@ def download_hazard_catalogue(
         raise HazardError(
             "No hazard rasters could be produced: every requested return period had "
             f"an incomplete tile set ({', '.join(f'RP{rp}' for rp in incomplete)}). "
-            "Retry — JRC tile fetches can fail transiently — or set "
+            "Retry (JRC tile fetches can fail transiently) or set "
             "hazard_cache_tiles=False to stream tiles via /vsicurl."
         )
     return [results[pos] for pos in ordered if pos in results]
@@ -463,7 +463,7 @@ def mirror_hazard(
 ) -> MirrorResult:
     """Mirror GLOFAS hazard tiles into the cache for offline/HPC use.
 
-    Region-scoped when an ROI is given (only the intersecting tiles — the
+    Region-scoped when an ROI is given (only the intersecting tiles, the
     HPC-friendly footprint), else every tile globally (~350 MB per return period).
     Records a per-tile sha256+size ledger in ``hazard_manifest.json`` (accumulating
     across incremental region mirrors), passes each tile's ledgered size as
@@ -472,7 +472,7 @@ def mirror_hazard(
 
     This is the *populate* action, so it is network-permitted regardless of
     ``hazard_mode``. It does **not** fail closed on a partial download (a bulk mirror
-    is idempotent/resumable) — failures are surfaced via ``result.missing``.
+    is idempotent/resumable). Failures are surfaced via ``result.missing``.
 
     Args:
         region: ROI selection (place / geometry / bbox tuple), as `hazard`. Omit
@@ -483,7 +483,7 @@ def mirror_hazard(
         shapefile: Path to a vector file used as the ROI.
         buffer_m: Optional extra metric buffer around the ROI.
         level: Optional NUTS level filter for place-name resolution.
-        shape: ROI shape — ``"exact"``/``"bbox"``/``"hull"`` (see `hazard`).
+        shape: ROI shape, ``"exact"``/``"bbox"``/``"hull"`` (see `hazard`).
         return_period: Return period(s) to mirror. ``None`` mirrors all supported.
         dry_run: Resolve the tile set and report the plan without downloading.
         settings: Optional configuration. Defaults to `get_settings`.
@@ -673,7 +673,7 @@ def build_hazard_manifest(settings: Settings | None = None) -> Path:
     tile_path = settings.get_hazard_index_path()
 
     out = settings.get_hazard_manifest_path()
-    # Preserve any local mirror ledger already in the file — authoring the citable
+    # Preserve any local mirror ledger already in the file: authoring the citable
     # provenance must never wipe the record of mirrored tiles.
     existing = json.loads(out.read_text()) if out.exists() else {}
     doc = {

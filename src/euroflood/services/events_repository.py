@@ -51,7 +51,7 @@ class EventsRepository:
         id_list = ",".join(str(i) for i in ids)
         path = str(self.settings.get_events_path())
         # SELECT * (not a fixed column list) so a metadata-less table (only
-        # global_id) still resolves — the connection is reused across queries.
+        # global_id) still resolves. The connection is reused across queries.
         res = connection().execute(
             f"SELECT * FROM read_parquet('{path}') WHERE global_id IN ({id_list})"
         )

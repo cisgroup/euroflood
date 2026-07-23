@@ -1,7 +1,7 @@
 # CLI & output
 
-The `euroflood` command line mirrors the Python API — every query is also a
-command. See **[Tutorial 7 — CLI & configuration](../tutorials/07_cli_and_config.ipynb)**
+The `euroflood` command line mirrors the Python API: every query is also a
+command. See **[Tutorial 7: CLI & configuration](../tutorials/07_cli_and_config.ipynb)**
 for a guided tour; this page is the reference for the output contract, global
 options, and exit codes, followed by the auto-generated command listing.
 
@@ -10,13 +10,13 @@ options, and exit codes, followed by the auto-generated command listing.
 EuroFlood keeps **stdout and stderr cleanly separated** so results are easy to read
 interactively and easy to parse on a server:
 
-- **stdout — user-facing results.** Query tables, status confirmations, and progress
+- **stdout: user-facing results.** Query tables, status confirmations, and progress
   bars are rendered by a [rich](https://rich.readthedocs.io) console. On a non-TTY (a
   pipe, a file, an HPC job) styling and live progress are dropped automatically, so
   redirected output stays plain.
-- **stderr — logs.** Structured `structlog` events. On a TTY they render as colored
+- **stderr: logs.** Structured `structlog` events. On a TTY they render as colored
   `key=value` lines; when piped or run on HPC they render as **one JSON object per
-  line**. Importing `euroflood` configures no logging at all — the CLI opts in, and
+  line**. Importing `euroflood` configures no logging at all. The CLI opts in, and
   library users call `euroflood.setup_logging()` explicitly.
 
 ## Global options
@@ -38,7 +38,7 @@ euroflood -q download "Zutphen, Netherlands" -o out/   # just the result, no cha
 
 ## Errors & exit codes
 
-Domain errors are rendered as a **single clean line** with an actionable next step —
+Domain errors are rendered as a **single clean line** with an actionable next step,
 never a Python traceback:
 
 ```console
@@ -62,7 +62,7 @@ so scripts can branch on the failure kind:
 | `7` | Cache schema mismatch (rebuild or re-mirror the index) |
 | `8` | Raster processing error |
 
-Unexpected (non-EuroFlood) exceptions are never swallowed — they surface with a full
+Unexpected (non-EuroFlood) exceptions are never swallowed: they surface with a full
 traceback so real bugs stay loud.
 
 ## Command listing

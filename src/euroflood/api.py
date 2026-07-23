@@ -79,7 +79,7 @@ def floods(
         start: Keep events on/after this date (``"YYYY"`` or ``"YYYY-MM-DD"``).
         end: Keep events on/before this date (``"YYYY"`` or ``"YYYY-MM-DD"``).
         level: Optional NUTS level filter for place-name resolution.
-        shape: ROI shape derived from the resolved region — ``"exact"`` (default,
+        shape: ROI shape derived from the resolved region: ``"exact"`` (default,
             the raw boundary), ``"bbox"`` (its bounding rectangle), or ``"hull"``
             (its convex hull). Useful when an admin boundary follows a river or is
             oddly shaped; ``buffer_m`` still applies on top of the chosen shape.
@@ -151,7 +151,7 @@ def hazard(
         return_period: One or more of 10/20/50/75/100/200/500. ``None`` returns
             all available return periods.
         level: Optional NUTS level filter for place-name resolution.
-        shape: ROI shape derived from the resolved region — ``"exact"`` (default,
+        shape: ROI shape derived from the resolved region: ``"exact"`` (default,
             the raw boundary), ``"bbox"`` (its bounding rectangle), or ``"hull"``
             (its convex hull); ``buffer_m`` still applies on top.
         output_dir: Directory the cached-download auto-detect scans (defaults to
@@ -217,7 +217,7 @@ def download(
             chunk (the CLI uses it to drive a progress bar).
 
     Returns:
-        The paths of the written GeoTIFFs — one per historic event, or one
+        The paths of the written GeoTIFFs: one per historic event, or one
         ``hazard_RP{rp}_{roi}.tif`` per return period.
 
     Raises:
@@ -243,7 +243,7 @@ def offline(enabled: bool = True) -> None:
 
     Sets the master ``offline`` switch on the global settings, forcing both
     collections cache-only (the index COG is not streamed, hazard tiles are not
-    fetched) and the geocoder to the local NUTS backend — the programmatic
+    fetched) and the geocoder to the local NUTS backend, the programmatic
     equivalent of ``EUROFLOOD_OFFLINE=1``. Mirror your data first (see `mirror`).
 
     Examples:
@@ -278,10 +278,10 @@ def mirror(
 
     ``target`` selects what to mirror into the cache:
 
-    - ``"index"`` — the flood **catalogue** (global; enables offline ``floods()`` queries).
-    - ``"floods"`` — historic flood **depth maps** for the region (ensures the index).
-    - ``"hazard"`` — GLOFAS **hazard tiles** for the region.
-    - ``"all"`` — index + flood depths + hazard tiles for the region.
+    - ``"index"``: the flood **catalogue** (global; enables offline ``floods()`` queries).
+    - ``"floods"``: historic flood **depth maps** for the region (ensures the index).
+    - ``"hazard"``: GLOFAS **hazard tiles** for the region.
+    - ``"all"``: index + flood depths + hazard tiles for the region.
 
     ``region``/``bbox``/``point``/… scope the region for ``floods``/``hazard``/``all``.
     ``return_period`` applies to hazard, ``year``/``start``/``end`` to floods. Pass

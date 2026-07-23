@@ -25,6 +25,10 @@ repos:
         # visualize tutorial's recurrence map over the bbox ROI runs ~1.2 MB, so
         # keep a 1.5 MB guard against genuinely large files.
         args: ["--maxkb=1536"]
+        # The case-study notebooks are reproduced verbatim from the paper with their
+        # committed outputs (some embed large interactive maps); exempt them from the
+        # guard while keeping it everywhere else.
+        exclude: ^case_studies/.*\.ipynb$
 
   # Keep each tutorial's .py:percent and .ipynb in sync (runs after ruff so any
   # --fix on the .py propagates into the paired notebook).

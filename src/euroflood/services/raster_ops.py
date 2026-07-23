@@ -52,7 +52,7 @@ def area_km2(geom: BaseGeometry, *, from_crs: CRS = WGS84) -> float:
 
 
 def roi_key(geometry: BaseGeometry, *, length: int = 8) -> str:
-    """A short, stable hash of a geometry — used to keep crop filenames ROI-safe.
+    """A short, stable hash of a geometry, used to keep crop filenames ROI-safe.
 
     Two queries that share an ``output_dir`` but cover different areas would
     otherwise write to the same ``flood_<date>_id<id>.tif`` and collide; embedding
@@ -86,18 +86,18 @@ def _write_raster(
     *,
     tags: dict[str, str] | None = None,
 ) -> None:
-    """Write ``array`` to ``path`` as a GeoTIFF — atomically, with optional tags.
+    """Write ``array`` to ``path`` as a GeoTIFF, atomically, with optional tags.
 
     Writes to a sibling ``.part`` file and renames it into place with
     ``os.replace``, so an interrupted crop/mosaic can never leave a partial,
     valid-looking raster that a later ``nonempty_file`` cache check would trust and
     reuse. ``tags`` are stamped as dataset-level GeoTIFF metadata (embedded in the
-    file, no sidecar) — e.g. the set of source tiles a hazard mosaic was built from
-    — so the output's provenance is auditable.
+    file, no sidecar), e.g. the set of source tiles a hazard mosaic was built from,
+    so the output's provenance is auditable.
 
     The temp name is per-process-unique (``.<pid>.part``) so two processes cropping
-    the same cache key concurrently each rename their own file — the last writer
-    wins with a complete raster — instead of colliding on one shared temp.
+    the same cache key concurrently each rename their own file (the last writer
+    wins with a complete raster) instead of colliding on one shared temp.
     """
     tmp = path.with_name(f"{path.name}.{os.getpid()}.part")
     try:
@@ -152,8 +152,8 @@ class RasterOps:
     ) -> tuple[Any, Any, Any, float | None]:
         """Read one band of a raster into memory with its georeferencing.
 
-        Returns the ``(array, transform, crs, nodata)`` triple that plotting needs
-        — the same data `crop_raster` / `mosaic_and_crop` compute but
+        Returns the ``(array, transform, crs, nodata)`` triple that plotting needs,
+        the same data `crop_raster` / `mosaic_and_crop` compute but
         write to disk. The raster is assumed to already be on disk (e.g. a
         ``.download()`` output).
 

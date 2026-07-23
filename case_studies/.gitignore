@@ -1,0 +1,15 @@
+# Artifacts produced if a reader re-runs a case study (the notebooks write these at
+# run time). The committed .ipynb already carry the outputs the docs render, so
+# nothing here is needed for the build.
+out/
+outputs/
+data/
+results/
+*.csv
+*.geojson
+*.parquet
+*.png
+*.html
+*.tif
+.virtual_documents/
+.ipynb_checkpoints/

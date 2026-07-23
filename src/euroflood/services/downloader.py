@@ -151,8 +151,8 @@ class DownloadService:
     ) -> Path | None:
         """Download a file if it doesn't exist locally (or is the wrong size).
 
-        Checks the cache first. If the file is missing, empty, or — when
-        ``expected_size`` is given — a different size than expected, it is
+        Checks the cache first. If the file is missing, empty, or (when
+        ``expected_size`` is given) a different size than expected, it is
         (re-)downloaded. A size mismatch means a stale/corrupt cache file (e.g.
         from an older interrupted run), so it is re-fetched.
 

@@ -1,6 +1,6 @@
 """Tile lookup over the CEMS-GLOFAS tile-extents GeoJSON.
 
-GLOFAS ships no global index raster — only ``tile_extents.geojson`` (271 ~10x10
+GLOFAS ships no global index raster, only ``tile_extents.geojson`` (271 ~10x10
 degree tiles) plus a deterministic per-tile filename pattern. This service caches
 that GeoJSON (download-on-first-use, like the NUTS boundary dataset) and answers
 two questions: which tiles intersect an ROI, and what is the remote URL / cache

@@ -28,7 +28,7 @@ from ._raster import (
 
 _SUPPORTED_BACKENDS = ("folium",)
 
-# Basemap presets — including a grayscale option (CartoDB Positron).
+# Basemap presets, including a grayscale option (CartoDB Positron).
 _TILE_PRESETS = {
     "grayscale": "CartoDB positron",
     "greyscale": "CartoDB positron",

@@ -20,7 +20,7 @@
 #
 # Alongside the *historic* flood maps, `hazard(...)` queries the modelled **CEMS-GLOFAS**
 # flood-hazard maps by **return period** (the depth expected on average once every N years).
-# Hazard catalogues are just as *actionable* as historic ones — the same `.download()`,
+# Hazard catalogues are just as *actionable* as historic ones: the same `.download()`,
 # `.stats()`, `.plot()`, and `.explore()` all work.
 #
 # > This tutorial downloads real hazard tiles, so it needs network access.

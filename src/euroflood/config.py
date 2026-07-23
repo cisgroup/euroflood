@@ -172,7 +172,7 @@ class Settings(BaseSettings):
         default="auto",
         description="Where hazard tiles are read from: 'auto' (cache if present, "
         "else fetch from JRC; today's behaviour), 'local' (cache only; never touch "
-        "the network — HPC/offline), or 'remote' (always allow JRC). The analogue of "
+        "the network, HPC/offline), or 'remote' (always allow JRC). The analogue of "
         "index_mode. Orthogonal to hazard_cache_tiles (cache-whole-tile vs /vsicurl); "
         "'local' forces cache reads.",
     )
@@ -236,7 +236,7 @@ class Settings(BaseSettings):
         default=False,
         description="Master offline switch (env EUROFLOOD_OFFLINE). When True, forces "
         "both collections cache-only (index_mode + hazard_mode treated as 'local') and "
-        "the geocoder to the local NUTS backend — the single 'this is an offline node' "
+        "the geocoder to the local NUTS backend, the single 'this is an offline node' "
         "flag. Set programmatically via euroflood.offline().",
     )
 

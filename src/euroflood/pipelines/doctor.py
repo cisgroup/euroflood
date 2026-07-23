@@ -5,7 +5,7 @@ internally consistent and `/vsicurl`-ready: a valid tiled COG with overviews and
 `nodata=0`, a grid fingerprint matching the running code, per-file checksums that
 match the manifest, and sampled combo_ids that resolve in the dictionary. It also
 **reports** the populated-cell count N, the COG size, and the size an equivalent
-sparse-Parquet pixel table would be — so the COG-vs-table choice stays empirically
+sparse-Parquet pixel table would be, so the COG-vs-table choice stays empirically
 revisitable on the first real full ingest.
 """
 

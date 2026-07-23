@@ -1,6 +1,6 @@
 # Get started
 
-Install EuroFlood, run your first flood query, and download a depth map — end to end,
+Install EuroFlood, run your first flood query, and download a depth map, end to end,
 against the **published index** (no data build required). Prefer runnable notebooks? The
 **[Tutorials](tutorials/README.md)** cover all of this in depth.
 
@@ -23,8 +23,10 @@ use (~14 MB of tables), so there is nothing to download or configure first.
 
 ## Your first query
 
-`floods(...)` returns a **`FloodFrame`** — a `geopandas.GeoDataFrame`, one row per historic
+`floods(...)` returns a **`FloodFrame`**: a `geopandas.GeoDataFrame`, one row per historic
 flood event. It's cheap: it streams a small window of the index and downloads no rasters.
+That's the **discover** step of EuroFlood's discover → extract model; you **extract** depth
+rasters only for the events you keep.
 
 ```python
 import euroflood as ef
@@ -37,12 +39,12 @@ cat
 EuroFlood catalogue: 25 flood events · 2015-01-12 … 2024-02-05 · 51.6 km² total
 ```
 
-Because it *is* a GeoDataFrame, filter and plot it as usual — then `.download()` the depth
+Because it *is* a GeoDataFrame, filter and plot it as usual, then `.download()` the depth
 rasters for the events you keep and `.stats()` them (no network after the download):
 
 ```python
 recent = cat[cat["date"] >= "2021-01-01"]    # any pandas / geopandas operation
-recent.plot()                                 # recurrence heatmap — still no download
+recent.plot()                                 # recurrence heatmap, still no download
 dl = recent.download("out/")                  # fetch + crop only these events' rasters
 dl.stats()                                    # max/mean/p95 depth (m), area (km²), volume
 ```
@@ -62,7 +64,8 @@ ef.floods(point=(52.14, 6.20), radius_m=6000)     # point is (lat, lon)
 
 ## Modelled hazard
 
-The same API queries the global **CEMS-GLOFAS** flood-hazard maps by return period:
+The same API queries the global **CEMS-GLOFAS** flood-hazard maps by return period
+(seven are available: 10, 20, 50, 75, 100, 200, and 500 years):
 
 ```python
 haz = ef.hazard("Zutphen, Netherlands", return_period=[100, 500]).download("hazard/")
@@ -75,23 +78,23 @@ Everything above streams data on demand. For a fully offline / cluster node, **m
 the layers you need once** (on a machine with internet), then flip the node offline:
 
 ```bash
-# On a networked login node — stage a study region for offline use:
+# On a networked login node, stage a study region for offline use:
 euroflood mirror all --bbox 6.1 52.0 6.3 52.2 -r 100   # index + flood depths + hazard tiles
 euroflood verify all --bbox 6.1 52.0 6.3 52.2 -r 100 --deep   # readiness gate (checksums)
 
-# On the offline compute node — one switch forces everything cache-only:
+# On the offline compute node, one switch forces everything cache-only:
 export EUROFLOOD_OFFLINE=1
 euroflood floods --bbox 6.1 52.0 6.3 52.2 --download --out out/
 euroflood hazard --bbox 6.1 52.0 6.3 52.2 -r 100 --download --out out/
 ```
 
-`mirror` stages any layer independently — `mirror index` (the flood catalogue, so
+`mirror` stages any layer independently: `mirror index` (the flood catalogue, so
 `floods()` **queries** run offline), `mirror floods --bbox …` (the flood **depth maps**
 for a region), `mirror hazard --bbox …` (GLOFAS **hazard tiles** for a region), or
 `mirror all` for everything. `verify` reports what is present / missing / corrupt (`--deep`
 re-checks sha256). `EUROFLOOD_OFFLINE=1` (or `euroflood.offline()` in Python) forces both
 collections cache-only and the geocoder to the offline NUTS backend; a missing tile then
-raises a clear error naming the exact `mirror` command to run — never a silent partial
+raises a clear error naming the exact `mirror` command to run, never a silent partial
 result. In Python: `ef.mirror("hazard", bbox=(6.1, 52.0, 6.3, 52.2), return_period=100)`.
 
 ## Next steps
@@ -102,15 +105,24 @@ result. In Python: `ef.mirror("hazard", bbox=(6.1, 52.0, 6.3, 52.2), return_peri
 
     ---
 
-    The guided path — from a first query to hazard maps and quantitative analysis.
+    The guided path: from a first query to hazard maps and quantitative analysis.
 
     [:octicons-arrow-right-24: Start the tutorials](tutorials/README.md)
+
+-   :material-map-search:{ .lg .middle } __Case studies__
+
+    ---
+
+    Real-world flood analyses on genuine events across Europe, from Storm Boris to
+    the Valencia DANA.
+
+    [:octicons-arrow-right-24: Browse case studies](case-studies/README.md)
 
 -   :material-lightbulb-on:{ .lg .middle } __Concepts__
 
     ---
 
-    How the index works — the one page that makes everything else click.
+    How the index works: the one page that makes everything else click.
 
     [:octicons-arrow-right-24: Read Concepts](concepts.md)
 

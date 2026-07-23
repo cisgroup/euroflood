@@ -3,7 +3,7 @@
 Everything needed to build the **flood-recurrence** view is derived from the
 already-built index: masking the index COG to the catalogue's ROI gives a
 ``combo_id`` per pixel, and each ``combo_id`` maps to the *set* of flood events
-that touched it — so ``len(flood_ids)`` is exactly "how many times this pixel
+that touched it, so ``len(flood_ids)`` is exactly "how many times this pixel
 flooded", computed with **no source-raster download**. The event dates behind
 each region feed the interactive hover tooltip.
 """
@@ -48,7 +48,7 @@ def _mask_index_to_roi(
     """
     settings = _settings_of(frame)
     if len(frame) == 0:
-        raise VisualizationError("Empty catalogue — nothing to visualize.")
+        raise VisualizationError("Empty catalogue: nothing to visualize.")
     if is_hazard(frame):
         raise VisualizationError(
             "The recurrence/footprint view is historic-only (hazard has no combo "
@@ -107,7 +107,7 @@ def recurrence_grid(
             the recurrence count.
 
     Returns:
-        ``(counts, transform, crs, roi)`` — ``counts`` is a float raster where 0
+        ``(counts, transform, crs, roi)``: ``counts`` is a float raster where 0
         means "never flooded" (masked out when plotted).
     """
     combo, transform, crs, roi, combos, _ = _mask_index_to_roi(frame)
@@ -171,7 +171,7 @@ def event_footprints(frame: Any) -> Any:
     """Per-event flood extents from the index (one dissolved polygon per event).
 
     Replaces the catalogue's shared ROI geometry with each event's actual footprint
-    — the union of ROI pixels whose ``combo_id`` includes that event — and adds an
+    (the union of ROI pixels whose ``combo_id`` includes that event) and adds an
     ``extent_km2`` column. No rasters are downloaded; the extent is the ~90 m index
     presence mask, i.e. an approximate footprint.
 
@@ -181,7 +181,7 @@ def event_footprints(frame: Any) -> Any:
     Returns:
         A plain ``geopandas.GeoDataFrame`` (EPSG:4326), date-sorted, with the
         catalogue's metadata, a per-event ``geometry``, ``extent_km2`` (the area
-        **within the queried view** — the footprint is clipped to the ROI), and
+        **within the queried view**: the footprint is clipped to the ROI), and
         ``duration_days`` (event length, when ``end_date`` is available).
 
     Raises:
@@ -253,7 +253,7 @@ def depth_composite(paths: list[Path], out_path: Path, *, agg: str = "max") -> P
 
     Each event's depth raster may be in its own per-tile projection, so they are
     reprojected to EPSG:4326 (via ``WarpedVRT``) and merged with ``agg`` (default
-    ``"max"`` — the deepest value seen at each pixel). Written to ``out_path``.
+    ``"max"``: the deepest value seen at each pixel). Written to ``out_path``.
 
     Args:
         paths: The downloaded depth GeoTIFFs to combine.
