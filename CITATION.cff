@@ -7,8 +7,8 @@ abstract: >-
   discover which flood events touched a region (and when) and download only the
   depth rasters you need.
 type: software
-version: "0.2.1"
-date-released: "2026-07-23"
+version: "0.2.2"
+date-released: "2026-08-10"
 identifiers:
   - type: doi
     value: "10.5281/zenodo.21284459"

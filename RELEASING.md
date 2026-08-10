@@ -20,7 +20,8 @@ to PyPI (Trusted Publishing) and `docs.yml` deploys the docs. The private repo n
 or hosts docs itself (both workflows are guarded by `if: github.repository == 'cisgroup/euroflood'`).
 
 1. Move `CHANGELOG.md`'s `## [Unreleased]` items into a new `## [X.Y.Z]` section.
-2. Bump `pyproject.toml` (`project.version = "X.Y.Z"`).
+2. Bump `pyproject.toml` (`project.version = "X.Y.Z"`), then run `uv lock` so `uv.lock`
+   records the new project version.
 3. Update `CITATION.cff` `version` + `date-released` (not machine-checked — bump by hand).
 4. Commit, open a PR, merge to `main` (CI green).
 5. Mirror to the public repo from a clean `main`:

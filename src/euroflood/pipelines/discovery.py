@@ -22,8 +22,13 @@ import geopandas as gpd
 import numpy as np
 import pandas as pd
 import rasterio
-import rasterio.mask
 import structlog
+from rasterio.errors import WindowError
+from rasterio.features import geometry_mask, geometry_window
+from rasterio.windows import Window
+from rasterio.windows import bounds as window_bounds
+from shapely.geometry import box
+from shapely.prepared import prep
 
 from .._data import resolve_base_url
 from .._progress import file_progress
@@ -367,6 +372,69 @@ def _make_frame(
     return frame
 
 
+# Streaming read chunk edge (px), snapped up to the COG block grid. One chunk of
+# the uint32 index is at most ~64 MB, the ceiling of discovery's working set for
+# any ROI (a dense read of the ROI window scales with ROI area instead; the full
+# index is ~9.2 Gpx).
+_STREAM_CHUNK_PX = 4096
+
+
+def _stream_combo_counts(src: Any, roi: Any) -> dict[int, int] | None:
+    """Count the nonzero index pixels per combo_id inside ``roi``, chunk by chunk.
+
+    Result-identical to ``rasterio.mask.mask(src, [roi], crop=True)`` followed by
+    a pooled ``np.unique`` over the nonzero pixels, but the ROI window is read in
+    block-aligned chunks with the geometry mask applied chunk-locally, so memory
+    stays bounded by `_STREAM_CHUNK_PX` for any ROI.
+
+    Returns:
+        ``{combo_id: pixel_count}`` in ascending combo_id order, or ``None`` when
+        the ROI does not overlap the index raster at all.
+    """
+    try:
+        roi_window = geometry_window(src, [roi])
+    except WindowError:
+        return None
+
+    # Chunks are multiples of the block size so a chunk read decodes each COG
+    # tile exactly once (and never-written sparse tiles stay cheap zero-fills).
+    block_h, block_w = src.block_shapes[0]
+    chunk_h = max(block_h, _STREAM_CHUNK_PX // block_h * block_h)
+    chunk_w = max(block_w, _STREAM_CHUNK_PX // block_w * block_w)
+
+    row_off, col_off = int(roi_window.row_off), int(roi_window.col_off)
+    row_end = row_off + int(roi_window.height)
+    col_end = col_off + int(roi_window.width)
+
+    prepared = prep(roi)
+    counts: dict[int, int] = {}
+    for top in range(row_off // chunk_h * chunk_h, row_end, chunk_h):
+        for left in range(col_off // chunk_w * chunk_w, col_end, chunk_w):
+            win = Window(left, top, chunk_w, chunk_h).intersection(roi_window)
+            cell = box(*window_bounds(win, src.transform))
+            # An exact-shape ROI (NUTS region, shapefile) rarely fills its own
+            # bounding box: chunks its geometry never touches are skipped unread.
+            if not prepared.intersects(cell):
+                continue
+            data = src.read(1, window=win)
+            if prepared.contains_properly(cell):
+                values = data[data != 0]  # interior chunk: no mask to rasterize
+            else:
+                inside = geometry_mask(
+                    [roi],
+                    out_shape=(int(win.height), int(win.width)),
+                    transform=src.window_transform(win),
+                    invert=True,
+                )
+                values = data[inside & (data != 0)]
+            if values.size == 0:
+                continue
+            ids, freq = np.unique(values, return_counts=True)
+            for combo_id, n in zip(ids.tolist(), freq.tolist(), strict=True):
+                counts[combo_id] = counts.get(combo_id, 0) + n
+    return dict(sorted(counts.items()))
+
+
 class DiscoveryPipeline:
     """Resolve a region and query the index into a FloodFrame catalogue (cheap)."""
 
@@ -438,28 +506,24 @@ class DiscoveryPipeline:
             )
 
         # A per-process cached open handle (opening a remote COG re-reads its tile index
-        # each time); the GDAL env keeps the windowed read block-cached in-process, so a
+        # each time); the GDAL env keeps the chunked reads block-cached in-process, so a
         # second query is near-instant. Local file or a /vsicurl URL: do not close it.
         src = self.index.open_index()
         with rasterio.Env(**_GDAL_ENV):
-            try:
-                out_image, _ = rasterio.mask.mask(src, [roi], crop=True)
-            except ValueError:
-                logger.warning("roi_outside_bounds")
-                return _make_frame([], self.settings)
-
-        flat = out_image[out_image != 0]
-        if flat.size == 0:
+            combo_counts = _stream_combo_counts(src, roi)
+        if combo_counts is None:
+            logger.warning("roi_outside_bounds")
+            return _make_frame([], self.settings)
+        if not combo_counts:
             logger.info("no_floods_found_in_area")
             return _make_frame([], self.settings)
 
         # Accumulate flooded-pixel counts per event across the ROI's combos.
-        combo_ids, counts = np.unique(flat, return_counts=True)
-        combos = self.dictionary.lookup_combos([int(c) for c in combo_ids])
+        combos = self.dictionary.lookup_combos(list(combo_counts))
         pixels: dict[int, int] = {}
         embedded: dict[int, dict[str, Any]] = {}  # metadata a legacy JSON dict carries
-        for combo_id, count in zip(combo_ids, counts, strict=False):
-            combo = combos.get(str(int(combo_id)))
+        for combo_id, count in combo_counts.items():
+            combo = combos.get(str(combo_id))
             if combo is None:
                 continue
             if combo.get("events"):  # legacy JSON dictionary embeds event metadata
@@ -468,10 +532,10 @@ class DiscoveryPipeline:
                     if gid is None:
                         continue
                     embedded.setdefault(gid, event)
-                    pixels[gid] = pixels.get(gid, 0) + int(count)
+                    pixels[gid] = pixels.get(gid, 0) + count
             else:  # normalized dict: integer flood_ids -> metadata from events.parquet
                 for gid in combo.get("flood_ids", []):
-                    pixels[gid] = pixels.get(gid, 0) + int(count)
+                    pixels[gid] = pixels.get(gid, 0) + count
 
         # Resolve event metadata from the embedded JSON, else the events table.
         events = embedded or self.events.lookup_events(list(pixels.keys()))

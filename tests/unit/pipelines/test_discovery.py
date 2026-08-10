@@ -3,9 +3,12 @@
 import json
 
 import geopandas as gpd
+import numpy as np
 import pytest
 import rasterio
-from shapely.geometry import box
+import rasterio.mask
+from rasterio.transform import from_origin
+from shapely.geometry import Polygon, box
 
 import euroflood as ef
 from euroflood.core.manifest import write_manifest
@@ -383,6 +386,86 @@ def test_roi_inside_bounds_but_no_floods_returns_empty(index_env, mocker):
     cat = ef.floods("DryCorner")
     assert isinstance(cat, FloodFrame)
     assert len(cat) == 0
+
+
+# --- streamed index read ----------------------------------------------------
+def _write_tiled_index(path, blocksize=16):
+    """A 65x65 multi-block uint32 index (ragged edge blocks) with random combos."""
+    rng = np.random.default_rng(42)
+    data = rng.integers(0, 5, size=(65, 65)).astype(np.uint32)  # ids 0..4, 0 = dry
+    with rasterio.open(
+        path,
+        "w",
+        driver="GTiff",
+        height=65,
+        width=65,
+        count=1,
+        dtype="uint32",
+        crs="EPSG:4326",
+        transform=from_origin(10.0, 50.0, 0.01, 0.01),
+        nodata=0,
+        tiled=True,
+        blockxsize=blocksize,
+        blockysize=blocksize,
+    ) as dst:
+        dst.write(data, 1)
+
+
+def _dense_reference(src, roi):
+    """Reference result: mask the whole ROI window densely, pool nonzero counts."""
+    try:
+        out, _ = rasterio.mask.mask(src, [roi], crop=True)
+    except ValueError:
+        return None
+    flat = out[out != 0]
+    ids, counts = np.unique(flat, return_counts=True)
+    return {int(i): int(c) for i, c in zip(ids, counts, strict=True)}
+
+
+@pytest.mark.parametrize("chunk_px", [4096, 16, 32])  # 1 chunk / per-block / 2x2
+@pytest.mark.parametrize(
+    "roi",
+    [
+        Polygon([(10.02, 49.98), (10.62, 49.90), (10.10, 49.40)]),  # irregular
+        box(10.003, 49.717, 10.417, 49.999),  # bbox not aligned to pixel edges
+        box(9.0, 49.0, 11.0, 51.0),  # covers the whole raster (interior fast path)
+        box(10.101, 49.899, 10.104, 49.902),  # sub-pixel sliver
+    ],
+    ids=["polygon", "bbox_unaligned", "covers_all", "subpixel"],
+)
+def test_stream_combo_counts_matches_dense_mask(tmp_path, mocker, roi, chunk_px):
+    """The streamed read returns exactly what the dense mask+unique used to."""
+    import euroflood.pipelines.discovery as disc
+
+    tif = tmp_path / "index.tif"
+    _write_tiled_index(tif)
+    mocker.patch.object(disc, "_STREAM_CHUNK_PX", chunk_px)
+    with rasterio.open(tif) as src:
+        assert disc._stream_combo_counts(src, roi) == _dense_reference(src, roi)
+
+
+def test_stream_combo_counts_disjoint_roi_returns_none(tmp_path):
+    """An ROI entirely off the raster reports None (-> 'roi_outside_bounds')."""
+    from euroflood.pipelines.discovery import _stream_combo_counts
+
+    tif = tmp_path / "index.tif"
+    _write_tiled_index(tif)
+    with rasterio.open(tif) as src:
+        assert _stream_combo_counts(src, box(0.0, 0.0, 1.0, 1.0)) is None
+
+
+def test_query_exact_pixel_counts_with_tiny_chunks(index_env, mocker):
+    """area_km2 reflects the exact pooled pixel count, also across many chunks."""
+    import euroflood.pipelines.discovery as disc
+    from euroflood.pipelines.discovery import _cell_area_km2
+
+    roi = box(9.0, 49.0, 11.0, 51.0)
+    _patch_geocoder(mocker, geom=roi)
+    mocker.patch.object(disc, "_STREAM_CHUNK_PX", 1)  # snaps up to one block/chunk
+    cat = ef.floods("X")
+    # The sample index floods exactly the 10-px diagonal with combo 1 -> event 10.
+    assert len(cat) == 1
+    assert cat["area_km2"].iloc[0] == round(10 * _cell_area_km2(roi), 3)
 
 
 # --- combo_id absent from dictionary -----------------

@@ -6,6 +6,17 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 
 ## [Unreleased]
 
+## [0.2.2] - 2026-08-10
+
+### Fixed
+- `floods()` discovery (and therefore `mirror floods`) no longer materializes the
+  whole ROI window of the index raster in memory. Very large ROIs (continental
+  bounding boxes, "mirror everything") previously allocated tens of GB and were
+  OOM-killed with a bare `exit 137`; the index is now read in block-aligned chunks
+  with the ROI mask applied per chunk, so memory stays flat (~64 MB working set)
+  for any ROI, with identical query results. A full-archive query
+  (`bbox=(-180, -90, 180, 90)`) now completes on an ordinary machine. (#34)
+
 ## [0.2.1] - 2026-07-23
 
 ### Added
