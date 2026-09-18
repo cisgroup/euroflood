@@ -104,7 +104,7 @@ cat.to_parquet("zutphen.parquet")
 # %% [markdown]
 # ## A note on speed & caching
 #
-# The first `floods()` in a session mirrors the ~14 MB dictionary + events tables once (cached
+# The first `floods()` in a session mirrors the ~19 MB dictionary + events tables once (cached
 # across sessions), geocodes the place name (**cached on disk** after the first lookup), and
 # streams the index window over the network. Repeat queries are fast. For *fully offline* or
 # HPC use:

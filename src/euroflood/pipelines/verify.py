@@ -137,7 +137,7 @@ def verify_published(
 
     Args:
         base_url: The version-pinned bundle prefix, e.g.
-            ``https://data.source.coop/hackl/euroflood-index/v1.0.0``.
+            ``https://data.source.coop/hackl/euroflood-index/v1.1.0``.
         settings: Optional base settings to copy for the probe query (defaults to the
             global settings); the query always runs remote against ``base_url`` in an
             isolated temp cache, so the caller's cache is never touched.

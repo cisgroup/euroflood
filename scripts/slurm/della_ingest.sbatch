@@ -14,7 +14,8 @@
 #
 # Validated 2026-07-01: 3280 tiles -> 211 M points in 5:50 wall,
 # peak 13.98 GB across 32 workers, 0 failures. Check `sacct`/`seff`, not the .out
-# (the pipeline exits 0 even on mass failure).
+# (the pipeline exits 0 even on mass failure). The archive has since grown to
+# 3611 tiles -> 223 M points (the 2025 batch); scale the wall estimate ~10%.
 # -----------------------------------------------------------------------------
 #SBATCH --job-name=euroflood-ingest
 #SBATCH --output=logs/%x-%j.out
@@ -28,7 +29,7 @@
                                # clears that pathological bound with margin (4.5x the observed
                                # peak) and fits any node. Windowed read + GDAL_CACHEMAX (below)
                                # make this safe; pre-fix whole-tile reads OOM'd at 128 G & 256 G.
-#SBATCH --time=00:20:00         # Real run 5:50; ~3x margin for a full 3280-tile run.
+#SBATCH --time=00:20:00         # Real run 5:50; ~3x margin for a full 3611-tile run.
                                # <61 min -> 'test' QOS (fast; proven to allow 32c). 32 cores stay:
                                # ingest ran 81% CPU-efficient, so they speed it up, not waste.
 #SBATCH --mail-type=BEGIN,END,FAIL,TIME_LIMIT_90

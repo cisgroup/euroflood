@@ -22,7 +22,7 @@ for your group/NetID.
 
 | Step | Where | Script |
 |---|---|---|
-| 1. Download ~35 GB (mirror) | **della-vis1/2** (internet, no scheduler) | `della_mirror.sh` |
+| 1. Download ~39 GB (mirror) | **della-vis1/2** (internet, no scheduler) | `della_mirror.sh` |
 | 2. Process → Parquet (offline) | `cpu` partition (SLURM) | `della_ingest.sbatch` |
 | 3. Build the index COG (offline) | `cpu` partition (SLURM) | `della_build_index.sbatch` |
 
@@ -34,7 +34,7 @@ tmux new -s mirror && bash scripts/slurm/della_mirror.sh   # tmux survives disco
 
 # 2) + 3) from a login node, submit the offline compute jobs
 mkdir -p logs
-sbatch scripts/slurm/della_ingest.sbatch         # ~6 min on 32 cores (3280 tiles, peak ~14 GB)
+sbatch scripts/slurm/della_ingest.sbatch         # ~6 min on 32 cores (3611 tiles, peak ~14 GB)
 # confirm COMPLETED via sacct/seff (NOT the .out), then run the next step on its own:
 sbatch scripts/slurm/della_build_index.sbatch    # ~3 min -> COG + dictionary + manifest
 ```
@@ -81,7 +81,7 @@ uv run euroflood ingest --year 2020        # scrapes inventory.csv, ingests 2020
 ## 1b. (Optional but recommended) Download first, then process
 
 For large bulk fetches it's more robust to **download all source tiles first**, then
-process from the local cache. The full EFAS archive is **~35 GB across ~3,280 tiles**
+process from the local cache. The full EFAS archive is **~39 GB across ~3,610 tiles**
 (mostly-nodata uint16 masks: ~10 MB compressed but up to ~20 GB uncompressed; `ingest`
 streams them in row stripes so RAM stays bounded).
 

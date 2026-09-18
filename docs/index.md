@@ -13,7 +13,7 @@ hide:
 The CEMS-EFAS archive is open but has no index: just a coordinate in each filename,
 which can sit 2,870 km from the flooding. EuroFlood discovers *where and when* floods
 happened across Europe from a published index (zero config), then downloads only the
-depth rasters you want, no ~19 GB bulk archive, no setup.
+depth rasters you want, no ~39 GB bulk archive, no setup.
 
 [![PyPI version](https://img.shields.io/pypi/v/euroflood.svg?color=0277BD)](https://pypi.org/project/euroflood/)
 [![License: MIT](https://img.shields.io/badge/license-MIT-0277BD.svg)](https://github.com/cisgroup/euroflood/blob/main/LICENSE)
@@ -58,10 +58,11 @@ Zero configuration: the published index is read remotely and cached on first use
 
 ## See it across Europe
 
-![A decade of observed flood recurrence across Europe (2015–2024), computed entirely from the 138 MB index.](images/paper/fig-recurrence.png){ width="820" .center }
+![A decade of observed flood recurrence across Europe (2015–2024), computed entirely from the index.](images/paper/fig-recurrence.png){ width="820" .center }
 
-Every place the archive has seen flooded, 2015–2024: **376,857 km²** in all, computed
-entirely from the 138 MB index without downloading a single depth raster. Then zoom into
+Every place the archive had seen flooded over 2015–2024: **376,857 km²** in all, computed
+entirely from the index without downloading a single depth raster. (This figure and the
+map above cover the 2015–2024 decade; the index now reaches 2025.) Then zoom into
 any of it: the [case studies](case-studies/README.md) work through real events, from
 Storm Boris to the Valencia DANA.
 
@@ -73,8 +74,8 @@ Storm Boris to the Valencia DANA.
 
     ---
 
-    Continental coverage from ~3,280 Sentinel-1 flood-depth maps (2015–2024), indexed
-    so a query streams a few MB, never the ~19 GB archive.
+    Continental coverage from ~3,610 Sentinel-1 flood-depth maps (2015–2025), indexed
+    so a query streams a few MB, never the ~39 GB archive.
 
     [:octicons-arrow-right-24: How it works](concepts.md)
 

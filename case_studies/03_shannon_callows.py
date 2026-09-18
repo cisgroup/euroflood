@@ -25,6 +25,13 @@
 # road segment and settlement gets a *recurrence* count, how often it was actually seen flooded.
 
 # %% [markdown]
+# > **Outputs captured against index v1.0.0 (2015 to 2024).**
+# > The cells below are rendered from stored outputs and are not re-executed in CI.
+# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
+# > returns more events than the counts shown here. The analysis and its conclusions are
+# > unchanged.
+
+# %% [markdown]
 # ## The place
 #
 # The **Shannon callows** are the broad riverine floodplain meadows along the middle River Shannon
@@ -165,11 +172,13 @@ print(f"{chronic} settlements met the 1 km criterion in 10 or more events")
 top[["name", "n_floods"]].reset_index(drop=True)
 
 # %%
+# Derive the span from the data so the label can never contradict the count.
+_span = f"{cat['date'].astype(str).str[:4].min()} to {cat['end_date'].astype(str).str[:4].max()}"
 # Key figures, computed from the cells above.
 Markdown(
     f"### Key figures\n"
     f"| | |\n|---|---|\n"
-    f"| **Archived events (2015 to 2024)** | **{len(cat)}** |\n"
+    f"| **Archived events ({_span})** | **{len(cat)}** |\n"
     f"| **Ever-flooded footprint** | **{ever_flooded.area / 1e6:.0f} km²** |\n"
     f"| **Max detections in one cell** | **{int(counts.max())}** |\n"
     f"| **Flooded road length** | **{exposed['cut_km'].sum():.1f} km** |\n"

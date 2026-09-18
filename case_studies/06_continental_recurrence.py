@@ -26,6 +26,13 @@
 # read, no rasters downloaded.
 
 # %% [markdown]
+# > **Outputs captured against index v1.0.0 (2015 to 2024).**
+# > The cells below are rendered from stored outputs and are not re-executed in CI.
+# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
+# > returns more events than the counts shown here. The analysis and its conclusions are
+# > unchanged.
+
+# %% [markdown]
 # ## The archive and the index
 #
 # The observations come from the **CEMS-EFAS satellite-derived flood-depth maps** (reconstructed
@@ -115,12 +122,14 @@ plt.show()
 # Key figures. The continental aggregates are the paper's frozen result (a full-continent
 # recurrence raster does not fit in memory); the max is also reproduced live above at Aveiro.
 stats = json.loads((S.RESULTS / "fig_a_stats.json").read_text())
+# Derive the span from the data so the label can never contradict the count.
+_span = f"{cat['date'].astype(str).str[:4].min()} to {cat['end_date'].astype(str).str[:4].max()}"
 from IPython.display import Markdown  # noqa: E402
 
 Markdown(
     f"### Key figures\n"
     f"| | |\n|---|---|\n"
-    f"| **Archived events (2015 to 2024)** | **{len(cat):,}** |\n"
+    f"| **Archived events ({_span})** | **{len(cat):,}** |\n"
     f"| **Area flooded at least once** | **{stats['area_flooded_at_least_once_km2']:,.0f} km²** |\n"
     f"| **Cells flooded more than once** | **{stats['cells_recurrence_ge2_fraction']:.1%}** |\n"
     f"| **Most-flooded cell (Vouga / Aveiro, PT)** | **{max(int(k) for k in stats['cells_by_recurrence'])} times** |\n"

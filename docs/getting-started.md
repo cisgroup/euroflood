@@ -19,7 +19,7 @@ against the **published index** (no data build required). Prefer runnable notebo
     ```
 
 EuroFlood works out of the box: the published index is read remotely and cached on first
-use (~14 MB of tables), so there is nothing to download or configure first.
+use (~19 MB of tables), so there is nothing to download or configure first.
 
 ## Your first query
 
@@ -36,7 +36,7 @@ cat
 ```
 
 ```text
-EuroFlood catalogue: 25 flood events · 2015-01-12 … 2024-02-05 · 51.6 km² total
+EuroFlood catalogue: 26 flood events · 2015-01-12 … 2024-12-30 · 52.8 km² total
 ```
 
 Because it *is* a GeoDataFrame, filter and plot it as usual, then `.download()` the depth

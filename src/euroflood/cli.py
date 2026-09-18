@@ -258,7 +258,7 @@ def fetch_sources(
     limit: int | None,
     dry_run: bool,
 ) -> None:
-    """Download ALL raw source flood-map tiles to the cache (producer; ~35 GB).
+    """Download ALL raw source flood-map tiles to the cache (producer; ~39 GB).
 
     The stable "download first, then process" path for the full archive, used to
     *build* the index. Not a consumer offline command. For that use ``mirror``.
@@ -356,7 +356,7 @@ def doctor(dry_run: bool) -> None:
     "--version",
     "version",
     default=None,
-    help="Index version tag (e.g. v1.0.0); defaults to settings.index_version.",
+    help="Index version tag (e.g. v1.1.0); defaults to settings.index_version.",
 )
 @click.option(
     "--source-coop",
@@ -377,6 +377,21 @@ def doctor(dry_run: bool) -> None:
     "ZENODO_SANDBOX_TOKEN.",
 )
 @click.option(
+    "--record-id",
+    "record_id",
+    type=int,
+    default=None,
+    help="With --zenodo: publish a NEW VERSION of this existing Zenodo record "
+    "(keeps its concept DOI). Omit only for a dataset's first publication.",
+)
+@click.option(
+    "--readme-only",
+    "readme_only",
+    is_flag=True,
+    help="With --source-coop: re-upload only the product card at the repository "
+    "root, leaving the immutable vX.Y.Z/ prefix untouched.",
+)
+@click.option(
     "--no-verify",
     "no_verify",
     is_flag=True,
@@ -393,6 +408,8 @@ def publish(
     to_source_coop: bool,
     to_zenodo: bool,
     sandbox: bool,
+    record_id: int | None,
+    readme_only: bool,
     no_verify: bool,
     dry_run: bool,
 ) -> None:
@@ -403,6 +420,10 @@ def publish(
     environment / a local ``.env`` (AWS STS for Source Cooperative, ZENODO_TOKEN for
     Zenodo). ``--source-coop`` needs the ``publish`` extra (``pip install
     "euroflood[publish]"``).
+
+    For any Zenodo release after the first, pass ``--record-id`` so the existing concept
+    DOI keeps resolving to the latest version; without it a separate record (and a
+    separate concept DOI) is created.
     """
     from .pipelines.publish import publish_to_source_coop, publish_to_zenodo
 
@@ -412,13 +433,22 @@ def publish(
 
     if to_source_coop:
         sc = publish_to_source_coop(
-            settings, version=tag, dry_run=dry_run, verify=not no_verify
+            settings,
+            version=tag,
+            dry_run=dry_run,
+            verify=not no_verify,
+            readme_only=readme_only,
         )
+        scope = "product card only" if sc.get("readme_only") else "bundle"
         if sc.get("dry_run"):
             console.echo(
                 f"[dry-run] publish {sc['version']} -> Source Cooperative "
-                f"{sc['base_url']} ({len(sc['files'])} files: "
+                f"{sc['base_url']} [{scope}] ({len(sc['files'])} files: "
                 f"{', '.join(sc['files'])})"
+            )
+        elif sc.get("readme_only"):
+            console.success(
+                f"Refreshed the Source Cooperative product card: {sc['readme_key']}"
             )
         else:
             console.success(f"Published {tag} to Source Cooperative: {sc['base_url']}")
@@ -426,11 +456,20 @@ def publish(
                 console.success(sc["verify_summary"])
 
     if to_zenodo:
-        zn = publish_to_zenodo(settings, version=tag, sandbox=sandbox, dry_run=dry_run)
+        zn = publish_to_zenodo(
+            settings,
+            version=tag,
+            sandbox=sandbox,
+            record_id=record_id,
+            dry_run=dry_run,
+        )
         if zn.get("dry_run"):
+            rid = zn.get("record_id")
+            mode = zn.get("mode", "new-record")
+            scope = f"{mode} of record {rid}" if rid else mode
             console.echo(
                 f"[dry-run] publish {zn['version']} -> Zenodo {zn['target']} "
-                f"(token ${zn['token_env']}); {len(zn['files'])} files"
+                f"[{scope}] (token ${zn['token_env']}); {len(zn['files'])} files"
             )
         else:
             console.success(

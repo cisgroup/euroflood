@@ -819,3 +819,50 @@ def test_cli_verify_remote_no_url_errors(mocker):
     result = CliRunner().invoke(cli, ["verify", "remote"])
     assert result.exit_code != 0
     assert "No index base URL" in result.output
+
+
+def test_cli_publish_zenodo_dry_run_reports_new_version_mode(mocker):
+    """--record-id surfaces that an existing record gets a new version, not a new record."""
+    mocker.patch(
+        "euroflood.pipelines.publish.publish_to_zenodo",
+        return_value={
+            "dry_run": True,
+            "version": "1.1.0",
+            "target": "production",
+            "token_env": "ZENODO_TOKEN",
+            "files": ["manifest.json", "README.md"],
+            "mode": "new-version",
+            "record_id": 21284460,
+        },
+    )
+    result = CliRunner().invoke(
+        cli,
+        [
+            "publish",
+            "--zenodo",
+            "--version",
+            "1.1.0",
+            "--record-id",
+            "21284460",
+            "--dry-run",
+        ],
+    )
+    assert result.exit_code == 0
+    assert "[new-version of record 21284460]" in result.output
+
+
+def test_cli_publish_zenodo_passes_record_id_through(mocker):
+    """The CLI hands --record-id to the pipeline so the concept DOI is preserved."""
+    spy = mocker.patch(
+        "euroflood.pipelines.publish.publish_to_zenodo",
+        return_value={
+            "doi": "10.5281/zenodo.9",
+            "concept_doi": "10.5281/zenodo.8",
+            "record_url": "https://zenodo.org/record/9",
+        },
+    )
+    result = CliRunner().invoke(
+        cli, ["publish", "--zenodo", "--version", "1.1.0", "--record-id", "21284460"]
+    )
+    assert result.exit_code == 0
+    assert spy.call_args.kwargs["record_id"] == 21284460

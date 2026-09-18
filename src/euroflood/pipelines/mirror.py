@@ -2,7 +2,7 @@
 
 Downloads every source tile to the local cache **without** processing them: the
 stable "download first, then process" workflow for large bulk fetches (the full
-EFAS archive is ~35 GB across ~3,280 tiles). It is resumable (already-present
+EFAS archive is ~39 GB across ~3,610 tiles). It is resumable (already-present
 files are skipped via the download cache), tracks state in a ledger (with a
 dead-letter report + ``--retry-failed``), and ``--verify`` re-downloads any cached
 file whose on-disk size doesn't match the size JRC lists for it.

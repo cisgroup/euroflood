@@ -8,7 +8,7 @@ download, and what all the files in the cache are.
 
 ## The problem
 
-The JRC / CEMS-EFAS archive is ~3,280 satellite flood-depth GeoTIFFs (~18.9 GB of
+The JRC / CEMS-EFAS archive is ~3,610 satellite flood-depth GeoTIFFs (~39 GB of
 depth rasters), distributed through a flat HTTP directory with no API, catalogue, or
 spatial index. The only geolocation you get without opening a file is a centroid
 encoded in its filename, and a single event file can contain flooded areas up to
@@ -43,19 +43,19 @@ The index is a single **Cloud-Optimized GeoTIFF** (`europe_flood_index.tif`) on
 that grid. Each pixel holds a `uint32` **`combo_id`**:
 
 - `0`: never flooded (the vast majority; the COG is *sparse* and compresses to
-  **124 MB**).
+  **142 MB**).
 - `N > 0`: a **combination id**, a stable handle for *the exact set of flood
   events that flooded this pixel*.
 
 Many pixels share the same set of events, so there are far fewer distinct
 `combo_id`s than pixels. That's what keeps the index small.
 
-!!! info "Why ~138 MB is enough"
-    Europe is ~9.2 billion grid cells. Only **82.6 million** (0.9%) were ever wet, and
-    those resolve to just **1.57 million** distinct event combinations. So instead of a
-    dense 37 GB raster, or ~847 MB of explicit per-cell event lists, the index stores
-    a **124 MB** COG + a **13.9 MB** dictionary + a **0.3 MB** events table: about
-    **138 MB** in total, versus ~18.9 GB of source depth rasters.
+!!! info "Why ~161 MB is enough"
+    Europe is ~9.2 billion grid cells. Only **89.6 million** (1.0%) were ever wet, and
+    those resolve to just **2.05 million** distinct event combinations. So instead of a
+    dense 37 GB raster, or ~891 MB of explicit per-cell event lists, the index stores
+    a **142 MB** COG + an **18.8 MB** dictionary + a **0.4 MB** events table: about
+    **161 MB** in total, versus ~39 GB of source depth rasters.
 
 ### 3. The dictionary: `combo_id → flood_ids`
 
@@ -72,7 +72,7 @@ combo_id  ->  flood_ids
 
 A tiny `events.parquet` maps each `flood_id` to its metadata (start/end date, year,
 cluster, source filename + download URL). Storing metadata *once* here, instead of
-repeating it inside every combo, keeps the dictionary + events table to ~14 MB with no
+repeating it inside every combo, keeps the dictionary + events table to ~19 MB with no
 information loss.
 
 ```mermaid
@@ -85,7 +85,7 @@ flowchart LR
 ## Discover → Extract
 
 EuroFlood follows a two-stage model. **Discovery** finds which events affected a region,
-when they occurred, and how often cells were inundated, using only the ~138 MB index.
+when they occurred, and how often cells were inundated, using only the ~161 MB index.
 **Extraction** then retrieves native-resolution depth rasters, but only for the events
 you selected. So a query resolves in two cheap steps, then an optional extract:
 
@@ -108,11 +108,11 @@ actual depth data is fetched only when you ask.
 The same index can live locally or be streamed:
 
 - **Remote (default for the published index):** the COG is read a window at a time
-  over HTTP via GDAL's `/vsicurl`, and only the **~14 MB** dictionary + events tables
+  over HTTP via GDAL's `/vsicurl`, and only the **~19 MB** dictionary + events tables
   are cached on first use (SHA-256-verified). A query downloads a few MB, never the
   whole index. Controlled by `EUROFLOOD_INDEX_MODE` / `EUROFLOOD_INDEX_BASE_URL`.
 - **Local:** everything is read from the cache directory. `euroflood mirror index`
-  pulls the full **~138 MB** bundle once for fully-offline / HPC use.
+  pulls the full **~161 MB** bundle once for fully-offline / HPC use.
 
 **Hazard has a parallel switch, `hazard_mode`** (`auto`/`local`/`remote`), and both
 collections share a master `EUROFLOOD_OFFLINE=1` / `euroflood.offline()` toggle that forces
@@ -148,23 +148,25 @@ See **[Tutorial 3: Visualize](tutorials/03_visualize.ipynb)** for the full galle
 ## How complete, and how trustworthy
 
 The index reconstructs the archive's event footprints **exactly** at its ~90 m grid:
-across 100 events sampled over all ten years, footprints decoded from the published
-index match an independent re-ingest of the source rasters with an **IoU of 1.000**: no
-missing or spurious cells, no missing or spurious events. Queries also return
-**byte-identical** results whether streamed from the public host, a local mirror, or a
-private replica.
+across 100 events sampled from the 2015–2024 decade, footprints decoded from the
+published index match an independent re-ingest of the source rasters with an
+**IoU of 1.000**: no missing or spurious cells, no missing or spurious events.
+Queries also return **byte-identical** results whether streamed from the public
+host, a local mirror, or a private replica.
 
 And the index is fast because discovery reads only a *window* of it. Computing
 recurrence for the whole Netherlands, for example, is a **15.2 MB** windowed read of the
 index versus **3.9 GB** of source rasters, a **254×** reduction; marginal queries
 transfer just 0.12–0.91 MB.
 
-How complete is the archive itself? Compared against HANZE, an independent European
-flood-impact database (367 floods, 2015–2024), **84.2%** of documented floods coincide
+How complete is the archive itself? The figures below were computed on the 2015–2024
+subset of the archive. Compared against HANZE, an independent European flood-impact
+database (367 floods, 2015–2024), **84.2%** of documented floods coincide
 with an archived event in the same country within a week, well above the ~77.5% expected
 by chance. The signal is strongest for **river floods (91.4%)** and indistinguishable
-from chance for **flash floods (76.2%)**, and completeness rises over the decade
-(76.1% in 2015 → 97.6% in 2024).
+from chance for **flash floods (76.2%)**, and completeness rises across that decade
+(76.1% in 2015 → 97.6% in 2024). The 2025 events added in index v1.1.0 are not yet
+covered by this audit.
 
 ![Corroboration of HANZE-documented floods by the archive, by flood type, year, and matching window.](images/paper/fig-hanze-audit.png){ width="720" }
 

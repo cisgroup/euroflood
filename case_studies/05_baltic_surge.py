@@ -25,6 +25,13 @@
 # satellite record can catch only delayed, residual inundation.
 
 # %% [markdown]
+# > **Outputs captured against index v1.0.0 (2015 to 2024).**
+# > The cells below are rendered from stored outputs and are not re-executed in CI.
+# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
+# > returns more events than the counts shown here. The analysis and its conclusions are
+# > unchanged.
+
+# %% [markdown]
 # ## The event
 #
 # **Storm Babet** generated an exceptional Baltic storm surge along the Schleswig-Holstein coast

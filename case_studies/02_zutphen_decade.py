@@ -25,6 +25,13 @@
 # recurrence, download and measure depth, and retrieve modelled hazard, all in one place.
 
 # %% [markdown]
+# > **Outputs captured against index v1.0.0 (2015 to 2024).**
+# > The cells below are rendered from stored outputs and are not re-executed in CI.
+# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
+# > returns more events than the counts shown here. The analysis and its conclusions are
+# > unchanged.
+
+# %% [markdown]
 # ## The place
 #
 # **Zutphen** is a town on the river **IJssel** in the Netherlands. It is a useful test site
@@ -37,7 +44,7 @@
 # ## The archive and the index
 #
 # The observations come from the **CEMS-EFAS satellite-derived flood-depth maps**, the only
-# open, continental record of observed flood *depth* (roughly 3,280 dated events, 2015 to 2024,
+# open, continental record of observed flood *depth* (roughly 3,610 dated events, 2015 to 2025,
 # at 20 m, reconstructed from Sentinel-1). `euroflood` serves them through an **inverted raster
 # index** (each approximately 90 m cell stores the identifiers of every event that inundated it),
 # so discovery and recurrence come from a small windowed read with no rasters downloaded. It also
@@ -172,11 +179,13 @@ print(f"events whose maximum exceeds the modelled RP100 max ({rp100_max:.1f} m):
 
 # %%
 # Key figures, computed from the results above.
+# Derive the span from the data so the label can never contradict the count.
+_span = f"{cat['date'].astype(str).str[:4].min()} to {cat['end_date'].astype(str).str[:4].max()}"
 deepest = obs.sort_values("max_depth_m", ascending=False).iloc[0]
 Markdown(
     f"### Key figures\n"
     f"| | |\n|---|---|\n"
-    f"| **Events at this reach (2015 to 2024)** | **{len(cat)}** |\n"
+    f"| **Events at this reach ({_span})** | **{len(cat)}** |\n"
     f"| **Max detections in one cell** | **{int(counts.max())}** |\n"
     f"| **Median event 95th-pct depth** | **{obs['p95_depth_m'].median():.2f} m** |\n"
     f"| **Deepest event** | **{deepest['max_depth_m']:.1f} m** ({deepest['date']}) |\n"

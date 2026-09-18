@@ -1,14 +1,14 @@
 # EuroFlood Index — Satellite-Derived Flood Depth Maps for Europe
 
-![Flood-recurrence over Zutphen (river IJssel), built from this index — how often each ~90 m pixel flooded, 2015–2024.](__BASE_URL__/hero.png)
+![Flood-recurrence over Zutphen (river IJssel), built from this index — how often each ~90 m pixel flooded across a decade.](__BASE_URL__/hero.png)
 
 A queryable, cloud-native **spatial index** over the JRC / Copernicus **CEMS-EFAS
 Satellite-Derived Flood Depth Maps for Europe** (Betterle & Salamon, 2025). It answers
-*which historic floods hit a location, and when* — across Europe, 2015–2024 — **without
+*which historic floods hit a location, and when* — across Europe, 2015–2025 — **without
 downloading the depth rasters**, so a tool can then fetch only the specific flood-depth
 GeoTIFFs it actually needs.
 
-- **Coverage:** Europe · 2015–2024 · ~3,280 flood events · ~90 m grid
+- **Coverage:** Europe · 2015–2025 · ~3,610 flood events · ~90 m grid
 - **License:** CC-BY-4.0 (see *Attribution* below)
 - **Built with:** the open-source [`euroflood`](https://github.com/cisgroup/euroflood) Python library
 - **Latest version:** `v__VERSION__/`

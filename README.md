@@ -20,11 +20,11 @@
   </a>
 </p>
 
-<p align="center"><em>Flood-recurrence over Zutphen (river IJssel): how often each ~90&nbsp;m pixel flooded, 2015–2024, straight from the index.</em></p>
+<p align="center"><em>Flood-recurrence over Zutphen (river IJssel): how often each ~90&nbsp;m pixel flooded across a decade, straight from the index.</em></p>
 
 EuroFlood is a data-access tool for the JRC / Copernicus **CEMS-EFAS Satellite-Derived
-Flood Depth Maps for Europe**: ~3,280 observed, Sentinel-1-derived
-flood-depth maps across Europe, 2015–2024. The source is published only as an un-indexed bulk
+Flood Depth Maps for Europe**: ~3,610 observed, Sentinel-1-derived
+flood-depth maps across Europe, 2015–2025. The source is published only as an un-indexed bulk
 FTP archive; EuroFlood turns it into a **queryable index** so you can *discover* which flood
 events touched a region (and when) and *extract* only the depth rasters you actually need.
 
@@ -96,7 +96,7 @@ See the [Visualize tutorial](https://cisgroup.github.io/euroflood/tutorials/03_v
 ## How the data is served
 
 - **Zero-config (default):** the published index is read remotely: the COG streams via
-  `/vsicurl` and the ~14 MB dictionary + events table are cached locally on first use
+  `/vsicurl` and the ~19 MB dictionary + events table are cached locally on first use
   (SHA-256-verified). Set `EUROFLOOD_INDEX_MODE=local` to only ever use a local copy.
 - **Offline / HPC:** `euroflood mirror all --bbox <…> -r 100` stages a region's catalogue,
   flood depth maps, and hazard tiles into the cache (checksum-ledgered; `euroflood verify all

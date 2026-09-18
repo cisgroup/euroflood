@@ -25,7 +25,7 @@ def test_resolve_base_url_uses_baked_published_default(tmp_path):
     s = Settings(cache_dir=tmp_path, index_base_url=None)
     assert _data.resolve_base_url(s) == _data.DEFAULT_INDEX_BASE_URL
     assert _data.DEFAULT_INDEX_BASE_URL == (
-        "https://data.source.coop/hackl/euroflood-index/v1.0.0"
+        "https://data.source.coop/hackl/euroflood-index/v1.1.0"
     )
 
 

@@ -211,6 +211,9 @@ def make_index_bundle(cache: Path) -> None:
     write_manifest(bundle / "manifest.json")
     meta = cache / "dictionary_meta.json"
     if meta.exists():
+        # Copied verbatim, so its ``n_combos`` is the producer cache's GLOBAL combo count
+        # for whichever index version built it, not the count in this clipped bundle. No
+        # test asserts it; the doctor (its only reader) is never pointed at this fixture.
         shutil.copyfile(meta, bundle / "dictionary_meta.json")
 
     total = sum(p.stat().st_size for p in bundle.glob("*"))

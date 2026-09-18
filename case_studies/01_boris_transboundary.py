@@ -26,6 +26,13 @@
 # national flood maps.
 
 # %% [markdown]
+# > **Outputs captured against index v1.0.0 (2015 to 2024).**
+# > The cells below are rendered from stored outputs and are not re-executed in CI.
+# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
+# > returns more events than the counts shown here. The analysis and its conclusions are
+# > unchanged.
+
+# %% [markdown]
 # ## The event
 #
 # Between **9 and 16 September 2024**, Storm Boris brought persistent frontal rainfall over the
@@ -43,7 +50,7 @@
 # ## The archive and the index
 #
 # The observations come from the **CEMS-EFAS satellite-derived flood-depth maps**, the only
-# open, continental record of observed flood *depth*: roughly 3,280 dated events (2015 to 2024)
+# open, continental record of observed flood *depth*: roughly 3,610 dated events (2015 to 2025)
 # at 20 m, reconstructed from Sentinel-1 (Copernicus GFM extent, spatio-temporal clustering,
 # then FLEXTH depth). The archive is open but hard to query, several thousand GeoTIFFs in a flat
 # HTTP directory geolocated only by a single centroid in each filename, even though one file can

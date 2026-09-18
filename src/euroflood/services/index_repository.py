@@ -7,7 +7,7 @@ Three deployment modes (``settings.index_mode``):
 - ``local``: only ever read ``cache_dir``: the HPC / full-mirror / offline path.
 - ``remote``: always use the hosted index (still preferring any file already cached).
 
-When the hosted index is used, the small tables (the ~14 MB dictionary + ``events.parquet``
+When the hosted index is used, the small tables (the ~19 MB dictionary + ``events.parquet``
 + metadata + manifest) are **mirrored to the cache once, on first use** (hash-verified via
 `pooch`), and the big COG is **streamed** via GDAL ``/vsicurl``: only a query's ROI
 tiles are fetched, never the whole file. The base URL is the configured

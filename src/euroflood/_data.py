@@ -34,7 +34,7 @@ logger = structlog.get_logger(__name__)
 # one immutable published bundle (reproducibility). Bump this when a new index version is
 # published; users override it with ``EUROFLOOD_INDEX_BASE_URL``.
 DEFAULT_INDEX_BASE_URL: str | None = (
-    "https://data.source.coop/hackl/euroflood-index/v1.0.0"
+    "https://data.source.coop/hackl/euroflood-index/v1.1.0"
 )
 
 # Statuses worth another attempt. The published host intermittently returns 5xx, and a

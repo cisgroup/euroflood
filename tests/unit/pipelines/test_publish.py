@@ -212,3 +212,67 @@ def test_publish_source_coop_can_skip_verify(built_index, mocker, monkeypatch):
     )
     assert result["verified"] is None
     verify.assert_not_called()
+
+
+def test_source_coop_readme_only_leaves_the_version_prefix_untouched(
+    built_index, mocker, monkeypatch
+):
+    """The card is mutable; the vX.Y.Z/ prefix is not. --readme-only must not rewrite it."""
+    for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        monkeypatch.setenv(key, "x")
+    publisher = mocker.patch("euroflood.services.source_coop.SourceCoopPublisher")
+    publisher.return_value.upload_readme.return_value = "euroflood-index/README.md"
+    verify = mocker.patch("euroflood.pipelines.verify.verify_published")
+    manifest_path = built_index.settings.get_manifest_path()
+    before = manifest_path.read_text()
+
+    result = pub.publish_to_source_coop(
+        built_index.settings,
+        version="1.0.0",
+        readme_only=True,
+        dotenv=built_index.settings.cache_dir / "none",
+    )
+
+    assert result["readme_only"] is True
+    assert result["keys"] == []
+    assert result["readme_key"] == "euroflood-index/README.md"
+    # Only the root card goes up; nothing is written under the version prefix.
+    publisher.return_value.upload_files.assert_not_called()
+    publisher.return_value.upload_readme.assert_called_once()
+    # The published manifest must keep the exact bytes it was published with.
+    assert manifest_path.read_text() == before
+    # No hero is staged, and re-verifying an untouched bundle is pointless.
+    assert not (built_index.settings.cache_dir / "hero.png").exists()
+    verify.assert_not_called()
+
+
+def test_source_coop_readme_only_renders_the_zenodo_doi_into_the_card(
+    built_index, mocker, monkeypatch
+):
+    """The point of the flag: a DOI minted after upload reaches the card."""
+    for key in ("AWS_ACCESS_KEY_ID", "AWS_SECRET_ACCESS_KEY", "AWS_SESSION_TOKEN"):
+        monkeypatch.setenv(key, "x")
+    mocker.patch("euroflood.services.source_coop.SourceCoopPublisher")
+    pub.stamp_manifest(
+        built_index.settings.get_manifest_path(),
+        source_urls={"zenodo_concept_doi": "10.5281/zenodo.21284459"},
+    )
+
+    pub.publish_to_source_coop(
+        built_index.settings,
+        version="1.0.0",
+        readme_only=True,
+        dotenv=built_index.settings.cache_dir / "none",
+    )
+
+    card = (built_index.settings.cache_dir / "README.md").read_text()
+    assert "https://doi.org/10.5281/zenodo.21284459" in card
+
+
+def test_source_coop_readme_only_dry_run_lists_just_the_card(built_index):
+    out = pub.publish_to_source_coop(
+        built_index.settings, version="1.0.0", readme_only=True, dry_run=True
+    )
+    assert out["files"] == ["README.md"]
+    assert out["readme_only"] is True
+    assert not (built_index.settings.cache_dir / "README.md").exists()

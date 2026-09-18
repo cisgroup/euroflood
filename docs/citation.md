@@ -16,7 +16,7 @@ entry for the current release:
   author  = {Hackl, J\"urgen},
   title   = {{EuroFlood: query Europe's satellite flood-depth maps by place and time}},
   year    = {2026},
-  version = {0.2.0},
+  version = {0.3.0},
   license = {MIT},
   url     = {https://github.com/cisgroup/euroflood}
 }
@@ -29,7 +29,10 @@ Zenodo and mirrored on [Source Cooperative](https://source.coop/hackl/euroflood-
 Cite the **version** you used for reproducibility, or the **concept DOI** to point at
 whatever is latest:
 
-- **v1.0.0:** DOI [`10.5281/zenodo.21284460`](https://doi.org/10.5281/zenodo.21284460)
+- **v1.1.0** (current, coverage 2015-2025): DOI
+  [`10.5281/zenodo.22834747`](https://doi.org/10.5281/zenodo.22834747)
+- **v1.0.0** (coverage 2015-2024): DOI
+  [`10.5281/zenodo.21284460`](https://doi.org/10.5281/zenodo.21284460)
 - **Concept DOI** (always resolves to the latest version):
   [`10.5281/zenodo.21284459`](https://doi.org/10.5281/zenodo.21284459)
 
@@ -39,9 +42,9 @@ whatever is latest:
   title     = {{EuroFlood index}},
   year      = {2026},
   publisher = {Zenodo},
-  version   = {v1.0.0},
-  doi       = {10.5281/zenodo.21284460},
-  url       = {https://doi.org/10.5281/zenodo.21284460}
+  version   = {v1.1.0},
+  doi       = {10.5281/zenodo.22834747},
+  url       = {https://doi.org/10.5281/zenodo.22834747}
 }
 ```
 

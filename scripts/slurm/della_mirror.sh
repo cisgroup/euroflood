@@ -9,7 +9,7 @@
 #
 #   ssh <NetID>@della-vis1.princeton.edu
 #   cd /scratch/gpfs/<GROUP>/$USER/euroflood
-#   tmux new -s mirror          # so the ~35 GB pull survives a disconnect
+#   tmux new -s mirror          # so the ~39 GB pull survives a disconnect
 #   bash scripts/slurm/della_mirror.sh
 #
 # Resumable: re-run anytime (present files are skipped). --verify (set below)
@@ -28,7 +28,7 @@ uv --version
 uv sync                                                    # ONLINE: warms cache + builds .venv
 uv run python -c "import euroflood; print('euroflood ok')"
 
-# Scrape the inventory + download ALL source tiles (~35 GB), verifying sizes.
+# Scrape the inventory + download ALL source tiles (~39 GB), verifying sizes.
 uv run euroflood fetch-sources --update --verify
 
 echo "Mirror complete -> $EUROFLOOD_CACHE_DIR/downloads"

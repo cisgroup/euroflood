@@ -6,6 +6,58 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 
 ## [Unreleased]
 
+## [0.3.0] - 2026-09-18
+
+### Added
+- **Index v1.1.0** covering **2015-2025**: the JRC archive gained a `2025/` directory
+  (331 new tiles, 4.11 GB) after v1.0.0 was built, extending coverage by a year to
+  3,611 source events. The grid, schemas (`index_schema_version` 1,
+  `dictionary_schema_version` 5) and every existing `global_id` are unchanged, so the
+  bump is additive and existing `flood_id` references stay valid. Rebuilt bundle:
+  89.56 M populated cells (was 82.6 M), 2,048,370 combos (was 1,572,891), a 142.4 MB
+  COG + 18.8 MB dictionary (~161 MB total, was ~138 MB).
+- `euroflood publish --zenodo --record-id <id>` publishes a **new version of an existing
+  Zenodo record**, so the concept DOI keeps resolving to the latest release.
+- `euroflood publish --source-coop --readme-only` re-renders and uploads just the product
+  card at the repository root, leaving the immutable `vX.Y.Z/` prefix untouched. Needed
+  because the card is built from the manifest: a DOI minted *after* the bundle is
+  uploaded could otherwise only reach the card by rewriting published bytes.
+
+### Fixed
+- **Zenodo releases after the first created a separate record.** `ZenodoPublisher` only
+  ever called `POST /deposit/depositions`, which mints a brand-new *concept* DOI; there
+  was no way to add a version to an existing record. Publishing index v1.1.0 that way
+  would have stranded the existing concept DOI on v1.0.0 permanently. The client now
+  supports the `newversion` action, clearing the files a draft inherits from the previous
+  version before uploading the current bundle.
+- **The source-archive size was wrong in the docs.** Since 0.2.1 the archive was
+  described as `~18.9 GB` (and `~19 GB` on the landing page), a figure taken from the
+  paper that does not match the data: the 3,280 files of index v1.0.0 measure 35.21 GB
+  and the 3,611 files of v1.1.0 measure 39.32 GB. All surfaces now state the measured
+  `~39 GB`, which also corrects the compactness ratio (161 MB vs 39 GB, not vs 18.9 GB).
+- The `~14 MB` dictionary + events figure quoted in the README, Concepts, Getting started,
+  tutorial 2 and the `index_repository` docstring is now `~19 MB`, matching the v1.1.0
+  tables (18.8 MB + 0.4 MB).
+- `docs/citation.md` software BibTeX still said `version = {0.2.0}`.
+- The jupytext pre-commit hook only covered `examples/`, so `case_studies/` `.py`/`.ipynb`
+  pairs could silently diverge; it now covers both.
+- Three case-study "Key figures" tables hard-coded a `(2015 to 2024)` label above a
+  recomputed event count, so any re-run made the label contradict the number. The span is
+  now derived from the catalogue.
+
+### Changed
+- `DEFAULT_INDEX_BASE_URL` pinned to the `v1.1.0` Source Cooperative prefix.
+- Documentation coverage claims updated to ~3,610 events / 2015-2025, and the index-size
+  breakdown in **Concepts** recomputed from the new bundle.
+- Tutorial notebooks re-executed against index v1.1.0; the doc images and tutorial
+  thumbnails were regenerated from it.
+- Index v1.1.0 is archived on Zenodo as DOI `10.5281/zenodo.22834747`, published as a new
+  version of the existing record so the concept DOI `10.5281/zenodo.21284459` is unchanged
+  and now resolves to it. `CITATION.cff` and the citation page list all three.
+- Case-study notebooks carry a note that their stored outputs were captured against index
+  v1.0.0 (2015-2024). Their figures and derived statistics come from the paper's
+  reproduction package and are unchanged; re-running them live now returns more events.
+
 ## [0.2.2] - 2026-08-10
 
 ### Fixed

@@ -63,8 +63,8 @@ def build_zenodo_metadata(version: str) -> dict[str, Any]:
         "description": (
             "<p>EuroFlood is an open, cloud-native index over the JRC/Copernicus "
             "<em>CEMS-EFAS Satellite-Derived Flood Depth Maps for Europe</em> "
-            "(Betterle &amp; Salamon, 2025; CC-BY-4.0) &mdash; ~3,280 satellite-derived "
-            "<em>observed</em> flood-depth maps across Europe, 2015&ndash;2024. The "
+            "(Betterle &amp; Salamon, 2025; CC-BY-4.0) &mdash; ~3,610 satellite-derived "
+            "<em>observed</em> flood-depth maps across Europe, 2015&ndash;2025. The "
             "bundle is a sparse Cloud-Optimized GeoTIFF encoding, per pixel, the set of "
             "flood events that inundated it, plus a <code>combo_id</code>-sorted "
             "GeoParquet dictionary and a small events table. Query by region and time "
@@ -164,10 +164,17 @@ def publish_to_zenodo(
     *,
     version: str,
     sandbox: bool,
+    record_id: int | None = None,
     dry_run: bool = False,
     dotenv: Path = Path(".env"),
 ) -> dict[str, Any]:
-    """Validate + publish the bundle to Zenodo; stamp the manifest with version + DOI."""
+    """Validate + publish the bundle to Zenodo; stamp the manifest with version + DOI.
+
+    With ``record_id``, publishes a **new version** of that existing record, so its
+    concept DOI keeps resolving to the latest release and only a fresh version DOI is
+    minted. Without it, creates a brand-new record (and therefore a new concept DOI),
+    which is correct only for a dataset's first publication.
+    """
     settings = settings or get_settings()
     load_dotenv(dotenv)
     manifest_path = settings.get_manifest_path()
@@ -182,6 +189,8 @@ def publish_to_zenodo(
             "target": "sandbox" if sandbox else "production",
             "token_env": env_key,
             "files": names,
+            "mode": "new-version" if record_id else "new-record",
+            "record_id": record_id,
         }
 
     token = os.environ.get(env_key)
@@ -199,7 +208,11 @@ def publish_to_zenodo(
     )
     files = [*gather_bundle_files(settings), settings.cache_dir / "README.md"]
     metadata = build_zenodo_metadata(version)
-    result = ZenodoPublisher(token, sandbox=sandbox).create_and_publish(files, metadata)
+    publisher = ZenodoPublisher(token, sandbox=sandbox)
+    if record_id:
+        result = publisher.publish_new_version(record_id, files, metadata)
+    else:
+        result = publisher.create_and_publish(files, metadata)
     # Record the minted DOI back into the local manifest (and any future re-upload).
     # stamp_manifest merges source_urls, so a prior source_coop URL is preserved.
     stamp_manifest(
@@ -209,7 +222,13 @@ def publish_to_zenodo(
             "zenodo_concept_doi": result["concept_doi"],
         },
     )
-    logger.info("zenodo_published", version=version, doi=result["doi"])
+    logger.info(
+        "zenodo_published",
+        version=version,
+        doi=result["doi"],
+        concept_doi=result["concept_doi"],
+        mode="new-version" if record_id else "new-record",
+    )
     return result
 
 
@@ -219,6 +238,7 @@ def publish_to_source_coop(
     version: str,
     dry_run: bool = False,
     verify: bool = True,
+    readme_only: bool = False,
     dotenv: Path = Path(".env"),
 ) -> dict[str, Any]:
     """Validate + upload the bundle to Source Cooperative (the live ``/vsicurl`` host).
@@ -227,22 +247,30 @@ def publish_to_source_coop(
     immutable ``vX.Y.Z/`` prefix (plus a product README to the repo root), then
     self-verifies the hosted index end-to-end. AWS STS credentials come from the
     environment / a ``.env`` (never from code). Requires the ``publish`` extra (boto3).
+
+    With ``readme_only``, re-renders and uploads **just the product card** at the
+    repository root and touches nothing else: no bundle upload, no hero, and no manifest
+    stamping, so the immutable ``vX.Y.Z/`` prefix keeps the exact bytes it was published
+    with. Use it when the card needs to pick up something the manifest gained after the
+    bundle went up, such as a Zenodo DOI minted afterwards.
     """
     settings = settings or get_settings()
     load_dotenv(dotenv)
     manifest_path = settings.get_manifest_path()
     validate_publish_manifest(
-        manifest_path, base_dir=settings.cache_dir, verify_checksums=True
+        manifest_path, base_dir=settings.cache_dir, verify_checksums=not readme_only
     )
     base_url = settings.source_coop_base_url(version)
     bucket = settings.source_coop_account
     key_prefix = f"{settings.source_coop_repository}/v{version.lstrip('v')}"
 
     if dry_run:  # read-only: validate + report, upload nothing
-        names = [f.name for f in gather_bundle_files(settings)] + [
-            "README.md",
-            "hero.png",
-        ]
+        names = (
+            ["README.md"]
+            if readme_only
+            else [f.name for f in gather_bundle_files(settings)]
+            + ["README.md", "hero.png"]
+        )
         return {
             "dry_run": True,
             "version": version,
@@ -250,6 +278,7 @@ def publish_to_source_coop(
             "bucket": bucket,
             "key_prefix": key_prefix,
             "files": names,
+            "readme_only": readme_only,
         }
 
     try:
@@ -261,9 +290,12 @@ def publish_to_source_coop(
         ) from exc
 
     # Stamp version + the public URL into the manifest, write the product README, upload.
-    stamp_manifest(
-        manifest_path, index_version=version, source_urls={"source_coop": base_url}
-    )
+    # A readme-only refresh leaves the manifest alone: it is already published, and the
+    # card is rendered from whatever the local manifest happens to say.
+    if not readme_only:
+        stamp_manifest(
+            manifest_path, index_version=version, source_urls={"source_coop": base_url}
+        )
     readme = settings.cache_dir / "README.md"
     readme.write_text(
         build_readme(
@@ -272,29 +304,36 @@ def publish_to_source_coop(
             zenodo_concept_doi=_zenodo_concept_doi(manifest_path),
         )
     )
-    # The product-card hero is shipped as package data; stage + upload it into the version
-    # prefix so the card (served at the repo root) can reference a public URL that doesn't
-    # depend on the GitHub repo being public: {base_url}/hero.png.
-    hero = settings.cache_dir / "hero.png"
-    hero.write_bytes(
-        resources.files("euroflood.pipelines").joinpath("product_hero.png").read_bytes()
-    )
-
     publisher = SourceCoopPublisher(
         endpoint=settings.source_coop_endpoint, region=settings.source_coop_region
     )
-    keys = publisher.upload_files(
-        [*gather_bundle_files(settings), hero], bucket=bucket, key_prefix=key_prefix
-    )
+    keys: list[str] = []
+    if not readme_only:
+        # The product-card hero is shipped as package data; stage + upload it into the
+        # version prefix so the card (served at the repo root) can reference a public URL
+        # that doesn't depend on the GitHub repo being public: {base_url}/hero.png.
+        hero = settings.cache_dir / "hero.png"
+        hero.write_bytes(
+            resources.files("euroflood.pipelines")
+            .joinpath("product_hero.png")
+            .read_bytes()
+        )
+        keys = publisher.upload_files(
+            [*gather_bundle_files(settings), hero], bucket=bucket, key_prefix=key_prefix
+        )
     readme_key = publisher.upload_readme(
         readme, bucket=bucket, repository=settings.source_coop_repository
     )
     logger.info(
-        "source_coop_published", version=version, base_url=base_url, files=len(keys)
+        "source_coop_published",
+        version=version,
+        base_url=base_url,
+        files=len(keys),
+        readme_only=readme_only,
     )
 
     report = None
-    if verify:
+    if verify and not readme_only:
         from .verify import verify_published
 
         report = verify_published(base_url, settings=settings)
@@ -305,6 +344,7 @@ def publish_to_source_coop(
         "bucket": bucket,
         "keys": keys,
         "readme_key": readme_key,
+        "readme_only": readme_only,
         "verified": None if report is None else report.ok,
         "verify_summary": None if report is None else report.summary(),
     }

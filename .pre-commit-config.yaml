@@ -30,11 +30,11 @@ repos:
         # guard while keeping it everywhere else.
         exclude: ^case_studies/.*\.ipynb$
 
-  # Keep each tutorial's .py:percent and .ipynb in sync (runs after ruff so any
-  # --fix on the .py propagates into the paired notebook).
+  # Keep each tutorial's and case study's .py:percent and .ipynb in sync (runs after
+  # ruff so any --fix on the .py propagates into the paired notebook).
   - repo: https://github.com/mwouts/jupytext
     rev: v1.19.4
     hooks:
       - id: jupytext
         args: [--sync]
-        files: ^examples/.*\.(py|ipynb)$
+        files: ^(examples|case_studies)/.*\.(py|ipynb)$
