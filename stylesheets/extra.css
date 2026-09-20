@@ -1,0 +1,64 @@
+/* EuroFlood: "water" brand palette.
+   mkdocs.yml sets primary: custom / accent: custom; the colors live here so light
+   and dark can be tuned independently. Azure primary + cyan accent complement the
+   Blues flood-depth maps. */
+
+:root {
+  --md-primary-fg-color:        #0277bd;  /* azure: header, active nav */
+  --md-primary-fg-color--light: #58a5f0;
+  --md-primary-fg-color--dark:  #01579b;
+  --md-accent-fg-color:         #00b8d4;  /* cyan: links & hovers */
+  --md-accent-fg-color--transparent: rgba(0, 184, 212, 0.1);
+}
+
+/* Dark (slate): a medium azure header (not a glaring bar) + brighter links. */
+[data-md-color-scheme="slate"] {
+  --md-primary-fg-color:        #0288d1;
+  --md-primary-fg-color--light: #4fc3f7;
+  --md-primary-fg-color--dark:  #01579b;
+  --md-accent-fg-color:         #4dd0e1;
+  --md-typeset-a-color:         #4fc3f7;
+}
+
+/* Rounded corners on the real map figures + gallery thumbnails. */
+.md-typeset img[src*="/images/"],
+.md-typeset figure img {
+  border-radius: 0.4rem;
+}
+
+/* Center standalone showcase images (e.g. the landing "See it across Europe" band). */
+.md-typeset img.center {
+  display: block;
+  margin-inline: auto;
+}
+
+/* Tutorials gallery: render every thumbnail at a uniform aspect (crop in-browser
+   with object-fit, so the source PNGs aren't distorted). The bar-chart thumbnail
+   opts out with .no-crop so its axis labels aren't clipped. Icon feature cards use
+   inline SVG (not <img>), so they're unaffected. */
+.md-typeset .grid.cards img {
+  width: 100%;
+  aspect-ratio: 5 / 4;
+  object-fit: cover;
+  border-radius: 0.4rem;
+}
+.md-typeset .grid.cards img.no-crop {
+  aspect-ratio: auto;
+  object-fit: contain;
+}
+
+/* Landing hero: center the tagline block and give the hero image a soft shadow. */
+.md-typeset .euroflood-hero {
+  text-align: center;
+}
+.md-typeset .euroflood-hero img {
+  border-radius: 0.5rem;
+  box-shadow: 0 2px 12px rgba(0, 0, 0, 0.12);
+  max-width: 100%;
+}
+
+/* Slightly tighter feature-card icons. */
+.md-typeset .grid.cards .twemoji.lg svg {
+  height: 1.8rem;
+  width: 1.8rem;
+}
