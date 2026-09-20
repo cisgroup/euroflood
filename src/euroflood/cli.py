@@ -20,15 +20,18 @@ from .api import download as api_download
 from .api import floods as api_floods
 from .api import hazard as api_hazard
 from .api import mirror as api_mirror
+from .api import nuts as api_nuts
 from .api import verify as api_verify
 from .config import settings
 from .exceptions import (
     CacheSchemaError,
     ConfigurationError,
+    CRSError,
     EuroFloodError,
     GeocodingError,
     HazardError,
     NetworkError,
+    NutsError,
     ProcessingError,
     PublishError,
     ScrapingError,
@@ -61,6 +64,17 @@ _EXIT_CODES: list[tuple[type[BaseException], int]] = [
 ]
 
 _NEXT_STEPS: list[tuple[type[BaseException], str]] = [
+    (
+        CRSError,
+        "Pass a CRS pyproj understands (e.g. --crs EPSG:28992). --point is LAT LON "
+        "in a geographic CRS and X Y in a projected one; drop --crs to use a file's "
+        "own CRS.",
+    ),
+    (
+        NutsError,
+        "Check the identifier (and EUROFLOOD_NUTS_YEAR); find identifiers with "
+        "'euroflood nuts <name>' or 'euroflood nuts --country NL --level 2'.",
+    ),
     (
         GeocodingError,
         "Try a more specific name, or set EUROFLOOD_ALLOW_REMOTE_GEOCODING=1 "
@@ -122,8 +136,8 @@ def _write_catalogue(catalogue: object, path: str) -> None:
         catalogue.to_parquet(path)  # type: ignore[attr-defined]
     elif path.endswith((".geojson", ".json")):
         catalogue.to_file(path, driver="GeoJSON")  # type: ignore[attr-defined]
-    else:  # CSV: drop geometry so the table stays portable
-        catalogue.drop(columns="geometry").to_csv(path, index=False)  # type: ignore[attr-defined]
+    else:  # CSV: drop any geometry so the table stays portable
+        catalogue.drop(columns="geometry", errors="ignore").to_csv(path, index=False)  # type: ignore[attr-defined]
 
 
 @click.group(cls=EuroFloodCLI)
@@ -326,8 +340,8 @@ def _echo_index_report(report: dict[str, object]) -> None:
 def build_index(dry_run: bool) -> None:
     """Build the index COG + Parquet dictionary + publish manifest, then validate.
 
-    The Phase-5a producer entry point: runs the export aggregation and immediately
-    validates the bundle with the doctor (the gate Phase 5b publishes through).
+    The producer entry point: runs the export aggregation and immediately validates
+    the bundle with the doctor, the gate a publish goes through.
     """
     if dry_run:
         _echo_export_plan("build-index")
@@ -480,28 +494,32 @@ def publish(
 
 # --- offline mirror / verify family ----------------------------------------
 def _roi_options(f: Any) -> Any:
-    """Attach the standard ROI-selection options to a mirror/verify subcommand."""
-    f = click.argument("place", required=False)(f)
+    """Attach the standard region options (PLACE, --bbox, --point, ...) to a command.
+
+    click lists options in the reverse order they are attached, so they are attached
+    last-to-first here to read bbox, point, radius, crs, shapefile, nuts, buffer, shape.
+    """
     f = click.option(
-        "--bbox",
-        nargs=4,
-        type=float,
-        default=None,
-        help="ROI box: MINX MINY MAXX MAXY (WGS84).",
+        "--shape",
+        type=click.Choice(["exact", "bbox", "hull"]),
+        default="exact",
+        help="ROI shape: exact boundary (default), its bounding box, or convex hull.",
     )(f)
     f = click.option(
-        "--point",
-        nargs=2,
-        type=float,
-        default=None,
-        help="ROI point: LAT LON (with --radius).",
-    )(f)
-    f = click.option(
-        "--radius",
-        "radius_m",
+        "--buffer",
+        "buffer_m",
         type=float,
         default=0.0,
-        help="Radius (m) around --point.",
+        help="Extra ROI buffer in ground metres.",
+    )(f)
+    f = click.option(
+        "--nuts",
+        multiple=True,
+        default=(),
+        help=(
+            "Eurostat NUTS region id, e.g. NL22 (Gelderland); repeat to union several. "
+            "Find ids with 'euroflood nuts'."
+        ),
     )(f)
     f = click.option(
         "--shapefile",
@@ -510,14 +528,36 @@ def _roi_options(f: Any) -> Any:
         help="Vector file used as the ROI.",
     )(f)
     f = click.option(
-        "--buffer", "buffer_m", type=float, default=0.0, help="Extra metric ROI buffer."
+        "--crs",
+        type=str,
+        default=None,
+        help=(
+            "CRS of --bbox/--point (or of a --shapefile without one): anything pyproj "
+            "accepts, e.g. EPSG:28992. Default: WGS 84 lon/lat."
+        ),
     )(f)
     f = click.option(
-        "--shape",
-        type=click.Choice(["exact", "bbox", "hull"]),
-        default="exact",
-        help="ROI shape derived from the region.",
+        "--radius",
+        "radius_m",
+        type=float,
+        default=0.0,
+        help="Radius in ground metres around --point.",
     )(f)
+    f = click.option(
+        "--point",
+        nargs=2,
+        type=float,
+        default=None,
+        help="ROI point: LAT LON (X Y with a projected --crs); use with --radius.",
+    )(f)
+    f = click.option(
+        "--bbox",
+        nargs=4,
+        type=float,
+        default=None,
+        help="ROI box: MINX MINY MAXX MAXY (lon/lat in WGS 84, or in --crs).",
+    )(f)
+    f = click.argument("place", required=False)(f)
     return f
 
 
@@ -529,6 +569,8 @@ def _roi_kwargs(
     shapefile: str | None,
     buffer_m: float,
     shape: str,
+    crs: str | None,
+    nuts: tuple[str, ...] | None = None,
 ) -> dict[str, Any]:
     return {
         "region": place or None,
@@ -538,7 +580,24 @@ def _roi_kwargs(
         "shapefile": shapefile,
         "buffer_m": buffer_m,
         "shape": shape,
+        "crs": crs,
+        "nuts": list(nuts) if nuts else None,
     }
+
+
+def _require_one_roi(kw: dict[str, Any]) -> None:
+    """Consumer commands need one region: PLACE, or --bbox / --point / --shapefile.
+
+    The resolver rejects this too, but as a GeocodingError whose CLI hint talks about
+    place names; a usage error names the options instead.
+    """
+    keys = ("region", "nuts", "bbox", "point", "shapefile")
+    given = [k for k in keys if kw[k] is not None]
+    if len(given) != 1:
+        raise click.UsageError(
+            "Provide exactly one region: PLACE, or --nuts, --bbox, --point (with "
+            "--radius) or --shapefile."
+        )
 
 
 def _report_mirror(label: str, res: Any) -> None:
@@ -598,15 +657,19 @@ def mirror_floods_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     year: int | None,
     start: str | None,
     end: str | None,
     dry_run: bool,
 ) -> None:
     """Mirror flood DEPTH maps for a region so floods().download() runs offline."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     res = api_mirror("floods", year=year, start=start, end=end, dry_run=dry_run, **kw)
     assert isinstance(res, MirrorResult)
     if dry_run:
@@ -637,13 +700,17 @@ def mirror_hazard_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     return_periods: tuple[int, ...],
     dry_run: bool,
 ) -> None:
     """Mirror GLOFAS hazard tiles for a region so hazard().download() runs offline."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     rps: int | list[int] | None = list(return_periods) or None
     res = api_mirror("hazard", return_period=rps, dry_run=dry_run, **kw)
     assert isinstance(res, MirrorResult)
@@ -678,8 +745,10 @@ def mirror_all_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     return_periods: tuple[int, ...],
     year: int | None,
     start: str | None,
@@ -687,7 +756,9 @@ def mirror_all_cmd(
     dry_run: bool,
 ) -> None:
     """Mirror index + flood depths + hazard tiles for a region (one-shot prestage)."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     rps: int | list[int] | None = list(return_periods) or None
     out = api_mirror(
         "all", return_period=rps, year=year, start=start, end=end, dry_run=dry_run, **kw
@@ -759,12 +830,16 @@ def verify_floods_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     deep: bool,
 ) -> None:
     """Report flood depth-map mirror readiness for a region."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     _emit_verify(api_verify("floods", deep=deep, **kw))
 
 
@@ -785,13 +860,17 @@ def verify_hazard_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     return_periods: tuple[int, ...],
     deep: bool,
 ) -> None:
     """Report hazard-tile mirror readiness for a region."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     rps: int | list[int] | None = list(return_periods) or None
     _emit_verify(api_verify("hazard", return_period=rps, deep=deep, **kw))
 
@@ -813,13 +892,17 @@ def verify_all_cmd(
     point: Any,
     radius_m: float,
     shapefile: str | None,
+    nuts: tuple[str, ...],
     buffer_m: float,
     shape: str,
+    crs: str | None,
     return_periods: tuple[int, ...],
     deep: bool,
 ) -> None:
     """Report index + floods + hazard mirror readiness for a region."""
-    kw = _roi_kwargs(place, bbox, point, radius_m, shapefile, buffer_m, shape)
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
     rps: int | list[int] | None = list(return_periods) or None
     out = api_verify("all", return_period=rps, deep=deep, **kw)
     assert isinstance(out, dict)  # 'all' returns one report per layer
@@ -835,20 +918,13 @@ def verify_all_cmd(
 
 
 @cli.command()
-@click.argument("place")
+@_roi_options
 @click.option("--year", type=int, help="Keep only events in this year.")
 @click.option(
     "--start", type=str, help="Keep events on/after a date (YYYY or YYYY-MM-DD)."
 )
 @click.option(
     "--end", type=str, help="Keep events on/before a date (YYYY or YYYY-MM-DD)."
-)
-@click.option("--buffer", type=float, default=0.0, help="Buffer radius in metres.")
-@click.option(
-    "--shape",
-    type=click.Choice(["exact", "bbox", "hull"]),
-    default="exact",
-    help="ROI shape: exact boundary (default), its bounding box, or convex hull.",
 )
 @click.option(
     "--query",
@@ -867,20 +943,31 @@ def verify_all_cmd(
     "--dry-run", "dry_run", is_flag=True, help="Query + print but don't write -o."
 )
 def floods(
-    place: str,
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    nuts: tuple[str, ...],
+    buffer_m: float,
+    shape: str,
+    crs: str | None,
     year: int | None,
     start: str | None,
     end: str | None,
-    buffer: float,
-    shape: str,
     query_expr: str | None,
     out_path: str | None,
     dry_run: bool,
 ) -> None:
-    """Query historic flood events for PLACE (cheap; no rasters downloaded)."""
-    catalogue = api_floods(
-        place, year=year, start=start, end=end, buffer_m=buffer, shape=shape
+    """Query historic flood events for a region (cheap; no rasters downloaded).
+
+    The region is PLACE, or exactly one of --bbox / --point / --shapefile.
+    """
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
     )
+    _require_one_roi(kw)
+    catalogue = api_floods(year=year, start=start, end=end, **kw)
     if query_expr:
         catalogue = catalogue.query(query_expr)
     console.render_catalogue(catalogue, kind="floods", place=place)
@@ -892,17 +979,10 @@ def floods(
 
 
 @cli.command()
-@click.argument("place")
+@_roi_options
 @click.option("--year", type=int, help="Keep only events in this year.")
 @click.option("--start", type=str, help="Keep events on/after a date.")
 @click.option("--end", type=str, help="Keep events on/before a date.")
-@click.option("--buffer", type=float, default=0.0, help="Buffer radius in metres.")
-@click.option(
-    "--shape",
-    type=click.Choice(["exact", "bbox", "hull"]),
-    default="exact",
-    help="ROI shape: exact boundary (default), its bounding box, or convex hull.",
-)
 @click.option(
     "--query", "query_expr", type=str, help="pandas .query() filter on the catalogue."
 )
@@ -920,20 +1000,31 @@ def floods(
     help="Print what would be fetched; no download.",
 )
 def download(
-    place: str,
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    nuts: tuple[str, ...],
+    buffer_m: float,
+    shape: str,
+    crs: str | None,
     year: int | None,
     start: str | None,
     end: str | None,
-    buffer: float,
-    shape: str,
     query_expr: str | None,
     output_dir: str | None,
     dry_run: bool,
 ) -> None:
-    """Search PLACE and download + crop the matching flood maps."""
-    catalogue = api_floods(
-        place, year=year, start=start, end=end, buffer_m=buffer, shape=shape
+    """Search a region and download + crop the matching flood maps.
+
+    The region is PLACE, or exactly one of --bbox / --point / --shapefile.
+    """
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
     )
+    _require_one_roi(kw)
+    catalogue = api_floods(year=year, start=start, end=end, **kw)
     if query_expr:
         catalogue = catalogue.query(query_expr)
     if dry_run:
@@ -949,7 +1040,7 @@ def download(
 
 
 @cli.command()
-@click.argument("place")
+@_roi_options
 @click.option(
     "--return-period",
     "-r",
@@ -957,13 +1048,6 @@ def download(
     type=int,
     multiple=True,
     help="Return period(s): 10/20/50/75/100/200/500. Repeatable. Default: all.",
-)
-@click.option("--buffer", type=float, default=0.0, help="Buffer radius in metres.")
-@click.option(
-    "--shape",
-    type=click.Choice(["exact", "bbox", "hull"]),
-    default="exact",
-    help="ROI shape: exact boundary (default), its bounding box, or convex hull.",
 )
 @click.option(
     "--download",
@@ -985,18 +1069,31 @@ def download(
     "--dry-run", "dry_run", is_flag=True, help="Query + print but don't fetch/write."
 )
 def hazard(
-    place: str,
-    return_periods: tuple[int, ...],
-    buffer: float,
+    place: str | None,
+    bbox: Any,
+    point: Any,
+    radius_m: float,
+    shapefile: str | None,
+    nuts: tuple[str, ...],
+    buffer_m: float,
     shape: str,
+    crs: str | None,
+    return_periods: tuple[int, ...],
     do_download: bool,
     query_expr: str | None,
     out_path: str | None,
     dry_run: bool,
 ) -> None:
-    """Query global GLOFAS flood-hazard maps for PLACE by return period."""
+    """Query global GLOFAS flood-hazard maps for a region by return period.
+
+    The region is PLACE, or exactly one of --bbox / --point / --shapefile.
+    """
+    kw = _roi_kwargs(
+        place, bbox, point, radius_m, shapefile, buffer_m, shape, crs, nuts=nuts
+    )
+    _require_one_roi(kw)
     rps: int | list[int] | None = list(return_periods) or None
-    catalogue = api_hazard(place, return_period=rps, buffer_m=buffer, shape=shape)
+    catalogue = api_hazard(return_period=rps, **kw)
     if query_expr:
         catalogue = catalogue.query(query_expr)
     console.render_catalogue(catalogue, kind="hazard", place=place)
@@ -1017,6 +1114,53 @@ def hazard(
     elif out_path:
         _write_catalogue(catalogue, out_path)
         console.success(f"Wrote catalogue to {out_path}")
+
+
+@cli.command()
+@click.argument("query", required=False)
+@click.option(
+    "--level",
+    type=click.IntRange(0, 3),
+    default=None,
+    help="Keep only this NUTS level: 0 country, 1 major, 2 basic, 3 small regions.",
+)
+@click.option(
+    "--country", type=str, default=None, help="Keep only this country code, e.g. NL."
+)
+@click.option(
+    "--geometry",
+    "with_geometry",
+    is_flag=True,
+    help="Also load the boundary polygons (GISCO per-level files, cached).",
+)
+@click.option(
+    "-o",
+    "--out",
+    "out_path",
+    type=click.Path(),
+    help="Write the regions to .csv / .parquet / .geojson (GeoJSON implies --geometry).",
+)
+def nuts(
+    query: str | None,
+    level: int | None,
+    country: str | None,
+    with_geometry: bool,
+    out_path: str | None,
+) -> None:
+    """Find Eurostat NUTS regions: search QUERY by name, or list by --country/--level.
+
+    Prints each region's identifier, level, country and name. A QUERY that is an
+    identifier lists the region and its descendants (e.g. 'NL2' with --level 3).
+    Pass an identifier to floods/hazard/download with --nuts.
+    """
+    wants_geojson = bool(out_path and out_path.endswith((".geojson", ".json")))
+    regions = api_nuts(
+        query, level=level, country=country, geometry=with_geometry or wants_geojson
+    )
+    console.render_nuts(regions, query=query)
+    if out_path:
+        _write_catalogue(regions, out_path)
+        console.success(f"Wrote {len(regions)} region(s) to {out_path}")
 
 
 @cli.command(name="build-hazard-manifest")

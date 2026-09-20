@@ -95,6 +95,79 @@ def test_floods_forwards_shape_to_resolver(index_env, mocker):
     assert spy.call_args.kwargs.get("shape") == "bbox"
 
 
+def test_floods_forwards_crs_to_resolver(index_env, mocker):
+    """The public `crs=` kwarg reaches LocationResolver.resolve; the result stays WGS 84."""
+    from euroflood.services.location import LocationResolver
+
+    spy = mocker.spy(LocationResolver, "resolve")
+    rd_box = (200_000.0, 455_000.0, 220_000.0, 475_000.0)  # Amersfoort / RD New
+    cat = ef.floods(bbox=rd_box, crs="EPSG:28992")
+    assert spy.call_args.kwargs.get("crs") == "EPSG:28992"
+    assert cat.crs.to_epsg() == 4326
+
+
+def test_floods_bbox_in_projected_crs_matches_the_wgs84_query(index_env):
+    """The same area queried in ETRS89-LAEA metres and in lon/lat yields one catalogue."""
+    from pyproj import Transformer
+
+    wgs = (10.0, 49.9, 10.1, 50.0)  # the fixture raster's full extent
+    to_laea = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+    reference = ef.floods(bbox=wgs)
+    cat = ef.floods(bbox=to_laea.transform_bounds(*wgs), crs="EPSG:3035")
+    assert list(cat["event_id"]) == list(reference["event_id"]) == [10]
+    assert cat["area_km2"].iloc[0] == pytest.approx(
+        reference["area_km2"].iloc[0], rel=0.01
+    )
+
+
+def test_floods_nuts_region_resolves_through_the_repository(index_env, mocker):
+    """nuts= reaches LocationResolver.resolve and the NUTS boundary drives the query."""
+    from euroflood.services.location import LocationResolver
+    from euroflood.services.nuts import NutsRepository
+
+    geometry = mocker.patch.object(
+        NutsRepository, "geometry", return_value=box(10.0, 49.9, 10.1, 50.0)
+    )
+    spy = mocker.spy(LocationResolver, "resolve")
+    cat = ef.floods(nuts="NL22")
+    geometry.assert_called_once_with("NL22")
+    assert spy.call_args.kwargs.get("nuts") == "NL22"
+    assert list(cat["event_id"]) == [10]
+    assert cat.crs.to_epsg() == 4326
+
+
+def test_mirror_and_verify_floods_forward_nuts(mock_settings, mocker):
+    from euroflood.pipelines import discovery
+
+    mocker.patch.object(discovery, "_ensure_local_index")
+    query = mocker.patch.object(
+        discovery,
+        "_query_events",
+        return_value=discovery._make_frame([], mock_settings),
+    )
+    discovery.mirror_floods(nuts="NL22")
+    assert query.call_args.args[2]["nuts"] == "NL22"
+    discovery.verify_floods_mirror(nuts=["NL22", "NL21"])
+    assert query.call_args.args[2]["nuts"] == ["NL22", "NL21"]
+
+
+def test_mirror_and_verify_floods_forward_crs(mock_settings, mocker):
+    """mirror_floods / verify_floods_mirror pass crs on to the discovery query."""
+    from euroflood.pipelines import discovery
+
+    mocker.patch.object(discovery, "_ensure_local_index")
+    query = mocker.patch.object(
+        discovery,
+        "_query_events",
+        return_value=discovery._make_frame([], mock_settings),
+    )
+    rd_box = (200_000.0, 455_000.0, 220_000.0, 475_000.0)
+    discovery.mirror_floods(bbox=rd_box, crs="EPSG:28992")
+    assert query.call_args.args[2]["crs"] == "EPSG:28992"
+    discovery.verify_floods_mirror(bbox=rd_box, crs="EPSG:28992")
+    assert query.call_args.args[2]["crs"] == "EPSG:28992"
+
+
 def test_floods_year_filter(index_env, mocker):
     _patch_geocoder(mocker)
     assert len(ef.floods("X", year=2020)) == 1

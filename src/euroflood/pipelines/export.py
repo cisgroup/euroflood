@@ -9,7 +9,7 @@ dictionary** mapping each pixel's combination id to its flood events.
 -   **Pixel 0**: no flood ever recorded (NoData; dropped from the file via SPARSE_OK).
 -   **Pixel N**: a unique "combination id" -> a set of flood events (in the dictionary).
 
-**Scaling (Phase 5a).** The full grid is ~9.18 billion pixels (~37 GB uint32), but
+**Scaling.** The full grid is ~9.18 billion pixels (~37 GB uint32), but
 sparse, so it compresses to a few hundred MB. Three changes make the build tractable:
 1.  ``raw_pixels`` / ``pixel_combo`` are **materialized once** (not a VIEW re-aggregated
     per write chunk).
@@ -125,7 +125,7 @@ class ExportPipeline:
         try:
             # 1. Materialize raw_pixels ONCE (TABLE, not VIEW): group every flood_id
             #    at a cell into a canonical sorted list. (A VIEW would re-run this
-            #    GROUP BY for every raster write-band: the old ~35x bottleneck.)
+            #    GROUP BY for every raster write-band.)
             self.con.execute(
                 f"""
                 CREATE OR REPLACE TABLE raw_pixels AS
@@ -263,9 +263,9 @@ class ExportPipeline:
         Parquet file **sorted by combo_id** with bounded row groups, so per-row-group
         min/max stats prune a keyed ``combo_id IN (...)`` lookup to a few groups (local
         or over HTTP range) and the whole ~20 MB is one clean object to mirror/stream.
-        Event metadata is deliberately NOT denormalized into every combo (that repeated
-        7-field struct was ~96% of the old 778 MB file); it lives once in
-        ``events.parquet`` and is joined at query time.
+        Event metadata is deliberately NOT denormalized into every combo (the repeated
+        struct would dominate the file); it lives once in ``events.parquet`` and is
+        joined at query time.
         """
         logger.info("saving_dictionary")
         dict_path = self.settings.get_dictionary_parquet_path()

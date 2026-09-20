@@ -156,3 +156,99 @@ def test_clear_files_is_a_noop_when_the_draft_has_none(mocker):
         side_effect=lambda method, url, **kw: responses[(method, url)],
     )
     assert ZenodoPublisher("t", sandbox=True).clear_files(11) == 0
+
+
+def _reserved_draft_responses(mocker, base, *, placeholder=("README.md",)):
+    """Wire the reserved-draft flow: get draft -> clear placeholders -> upload -> publish."""
+    responses = {
+        ("GET", f"{base}/deposit/depositions/77"): _resp(
+            mocker,
+            json_data={
+                "id": 77,
+                "submitted": False,
+                "links": {"bucket": "https://bkt3"},
+                "metadata": {
+                    "prereserve_doi": {"doi": "10.5072/zenodo.77", "recid": 77}
+                },
+            },
+        ),
+        ("GET", f"{base}/deposit/depositions/77/files"): _resp(
+            mocker, json_data=[{"id": f} for f in placeholder]
+        ),
+        ("PUT", "https://bkt3/euroflood-0.3.0.tar.gz"): _resp(mocker),
+        ("PUT", f"{base}/deposit/depositions/77"): _resp(mocker),
+        ("POST", f"{base}/deposit/depositions/77/actions/publish"): _resp(
+            mocker,
+            json_data={
+                "doi": "10.5072/zenodo.77",
+                "conceptdoi": "10.5072/zenodo.76",
+                "links": {"record_html": "https://rec/77"},
+            },
+        ),
+    }
+    for fid in placeholder:
+        responses[("DELETE", f"{base}/deposit/depositions/77/files/{fid}")] = _resp(
+            mocker
+        )
+    return responses
+
+
+def test_publish_reserved_draft_keeps_the_pre_reserved_doi(mocker, tmp_path):
+    """The whole point of reserving: the published DOI is the one already in the artifact."""
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"sdist")
+    base = "https://sandbox.zenodo.org/api"
+    responses = _reserved_draft_responses(mocker, base)
+    calls = []
+
+    def _record(method, url, **kw):
+        calls.append((method, url))
+        return responses[(method, url)]
+
+    mocker.patch("requests.Session.request", side_effect=_record)
+    out = ZenodoPublisher("tok", sandbox=True).publish_reserved_draft(
+        77, [f], {"title": "EuroFlood", "version": "0.3.0"}
+    )
+
+    assert out["doi"] == "10.5072/zenodo.77"
+    assert out["concept_doi"] == "10.5072/zenodo.76"
+    assert out["deposition_id"] == 77
+    # It must never create a standalone deposition, which would mint a different
+    # concept DOI and strand the reservation.
+    assert ("POST", f"{base}/deposit/depositions") not in calls
+    # Nor go through newversion, which Zenodo rejects for an unpublished draft.
+    assert not any("actions/newversion" in u for _, u in calls)
+
+
+def test_publish_reserved_draft_clears_placeholders_before_uploading(mocker, tmp_path):
+    """A reserved draft often carries a placeholder file; it must not survive."""
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"sdist")
+    base = "https://sandbox.zenodo.org/api"
+    responses = _reserved_draft_responses(mocker, base)
+    calls = []
+
+    def _record(method, url, **kw):
+        calls.append((method, url))
+        return responses[(method, url)]
+
+    mocker.patch("requests.Session.request", side_effect=_record)
+    ZenodoPublisher("tok", sandbox=True).publish_reserved_draft(77, [f], {"title": "x"})
+
+    deletes = [i for i, (m, _) in enumerate(calls) if m == "DELETE"]
+    uploads = [i for i, (m, u) in enumerate(calls) if m == "PUT" and "bkt3" in u]
+    assert deletes and uploads
+    assert max(deletes) < min(uploads), "placeholders must go before the real artifacts"
+
+
+def test_publish_reserved_draft_refuses_an_already_published_record(mocker, tmp_path):
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"sdist")
+    mocker.patch(
+        "requests.Session.request",
+        side_effect=lambda method, url, **kw: _resp(
+            mocker, json_data={"id": 77, "submitted": True, "links": {}}
+        ),
+    )
+    with pytest.raises(ZenodoError, match="already published"):
+        ZenodoPublisher("t", sandbox=True).publish_reserved_draft(77, [f], {})

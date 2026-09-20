@@ -17,6 +17,7 @@ from typing import Any
 
 import numpy as np
 
+from . import _basemaps as basemaps
 from ._colormaps import DEPTH_CMAP, RECURRENCE_CMAP, mask_nodata, year_colors
 from ._deps import require
 from ._raster import (
@@ -28,16 +29,10 @@ from ._raster import (
 
 _SUPPORTED_BACKENDS = ("folium",)
 
-# Basemap presets, including a grayscale option (CartoDB Positron).
-_TILE_PRESETS = {
-    "grayscale": "CartoDB positron",
-    "greyscale": "CartoDB positron",
-    "gray": "CartoDB positron",
-    "grey": "CartoDB positron",
-    "light": "CartoDB positron",
-    "dark": "CartoDB dark_matter",
-    "osm": "OpenStreetMap",
-}
+# Basemap presets live in _basemaps, shared with the static path.
+# Leaflet keeps tiles in .leaflet-tile-pane and every overlay (GeoJson, ImageOverlay)
+# in other panes, so filtering that one pane darkens the basemap and nothing else.
+_DARK_TILE_CSS = "<style>.leaflet-tile-pane{filter:invert(1) brightness(0.92);}</style>"
 
 _BOUNDARY_STYLE = {"color": "#555", "weight": 2, "dashArray": "5, 5", "fill": False}
 
@@ -61,16 +56,22 @@ def _center(frame: Any) -> list[float]:
 def _new_map(location: list[float], *, tiles: str = "OpenStreetMap") -> tuple[Any, Any]:
     """A folium Map with a single toggleable basemap layer.
 
-    Returns ``(map, basemap_layer)``. ``tiles`` accepts a folium tile name or a
-    preset (``"grayscale"``, ``"dark"``, ...).
+    Returns ``(map, basemap_layer)``. ``tiles`` accepts a preset (``"grayscale"``,
+    ``"dark"``, ...) or a provider path such as ``"Esri.WorldImagery"``.
+
+    The reader's browser fetches these tiles, so a watermarked provider defaces the
+    map for whoever opens the notebook, not just for whoever rendered it. That is why
+    the presets avoid CARTO.
     """
     folium = require("folium")
-    provider = _TILE_PRESETS.get(str(tiles).lower(), tiles)
+    path, invert = basemaps.resolve(tiles)
     m = folium.Map(location=location, tiles=None, zoom_start=9)
     base = folium.TileLayer(
-        provider, name="basemap", overlay=True, control=True, show=True
+        basemaps.provider(path), name="basemap", overlay=True, control=True, show=True
     )
     base.add_to(m)
+    if invert:
+        m.get_root().header.add_child(folium.Element(_DARK_TILE_CSS))
     return m, base
 
 

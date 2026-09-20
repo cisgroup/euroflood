@@ -1,12 +1,11 @@
-"""Validate a built index bundle before it is published (the Phase 5b gate).
+"""Validate a built index bundle before it is published.
 
 Read-only checks that the COG + Parquet dictionary + publish manifest are
 internally consistent and `/vsicurl`-ready: a valid tiled COG with overviews and
 `nodata=0`, a grid fingerprint matching the running code, per-file checksums that
 match the manifest, and sampled combo_ids that resolve in the dictionary. It also
 **reports** the populated-cell count N, the COG size, and the size an equivalent
-sparse-Parquet pixel table would be, so the COG-vs-table choice stays empirically
-revisitable on the first real full ingest.
+sparse-Parquet pixel table would be, for sizing comparisons.
 """
 
 from __future__ import annotations
@@ -71,8 +70,8 @@ class IndexDoctor:
         if missing:
             raise CacheSchemaError(f"combo_ids missing from dictionary: {missing}")
 
-        # 4. Report N (populated cells) + the equivalent sparse-Parquet size, so the
-        #    COG-vs-table storage choice can be revisited once N is finally known.
+        # 4. Report N (populated cells) + the equivalent sparse-Parquet size, for
+        #    sizing comparisons between the COG and a table.
         n_cells = self._populated_cells()
         report["populated_cells"] = n_cells
         report["sparse_parquet_estimate_bytes"] = n_cells * 12  # 3x uint32 / cell

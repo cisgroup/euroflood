@@ -109,12 +109,12 @@ def build_publish_manifest(
     published_at: str | None = None,
     git_commit: str | None = None,
 ) -> dict[str, Any]:
-    """Build the publish manifest: the contract 5b deploys and consumers validate.
+    """Build the publish manifest: the contract publishing deploys and consumers validate.
 
     Extends the cache manifest (schema versions + grid fingerprint, so an
     incompatible grid is still rejected) with the publishing metadata: an
     ``index_version``, provenance, a COG attestation, per-file checksums/sizes,
-    and templated ``source_urls`` (filled by Phase 5b).
+    and templated ``source_urls`` (filled at publish time).
     """
     doc = build_manifest()  # cache_schema_version, dictionary_schema_version, grid
     doc["index_schema_version"] = INDEX_SCHEMA_VERSION

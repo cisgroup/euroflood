@@ -127,6 +127,18 @@ def test_real_index_query_returns_events(realdata_index_env):
     assert cat["year"].min() >= 2015
 
 
+def test_real_index_nuts_region_query(realdata_index_env, realdata_nuts_path):
+    """nuts="NL22" (Gelderland, which holds Zutphen) over the real clipped index."""
+    from euroflood.services.nuts import NutsRepository
+
+    realdata_index_env.nuts_dataset_path = realdata_nuts_path  # the real NUTS schema
+    cat = ef.floods(nuts="NL22")
+    assert len(cat) >= 5 and cat.crs.to_epsg() == 4326
+    assert cat.geometry.iloc[0].contains(box(*_ROI))  # the IJssel window lies inside
+    found = NutsRepository(settings=realdata_index_env).regions("Gelderland")
+    assert found["NUTS_ID"].tolist() == ["NL22", "NL224"]  # + Zuidwest-Gelderland
+
+
 def test_real_index_footprints_have_area(realdata_index_env):
     cat = ef.floods(bbox=_ROI)
     fp = cat.footprints()

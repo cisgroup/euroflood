@@ -6,15 +6,19 @@ upload the bundle files to its bucket -> set metadata -> publish -> obtain the D
 Always exercise ``sandbox=True`` (``sandbox.zenodo.org``, throwaway DOIs) before the real
 ``zenodo.org``.
 
-Two entry points, and the difference matters for citation:
+Three entry points, and the difference matters for citation:
 
 - `create_and_publish` starts a **brand-new record**, which mints a brand-new *concept*
-  DOI. Correct only for the very first publication of a dataset.
-- `publish_new_version` adds a version to an **existing** record. Zenodo mints a fresh
-  *version* DOI while the *concept* DOI keeps resolving to the latest, so every index
+  DOI. Correct only when no DOI was reserved and nothing has been published yet.
+- `publish_reserved_draft` fills a draft whose DOI was **reserved in advance**, which is
+  the only way to put the final DOI *inside* the artifact being archived. Use it for the
+  first release of such a record; `create_and_publish` would mint a different concept DOI
+  and strand the reservation, and `publish_new_version` cannot be used because Zenodo's
+  newversion action requires an already-published record.
+- `publish_new_version` adds a version to an **existing published** record. Zenodo mints a
+  fresh *version* DOI while the *concept* DOI keeps resolving to the latest, so every
   release stays reachable under one citable identifier. This is the right call for every
-  release after the first; using `create_and_publish` instead would strand the existing
-  concept DOI on the old version forever.
+  release after the first.
 """
 
 from __future__ import annotations
@@ -112,6 +116,54 @@ class ZenodoPublisher:
         draft: dict[str, Any] = self._request("GET", draft_url).json()
         return draft
 
+    def latest_version_id(self, concept_recid: int) -> int:
+        """Resolve a concept record to the id of its latest published version.
+
+        Lets a release pipeline carry only the stable concept id and discover whatever
+        the newest version is, instead of hard-coding a record id that changes every
+        release. Only works once at least one version is published: a concept record
+        does not exist until then.
+
+        Args:
+            concept_recid: The record's concept (all-versions) id.
+
+        Returns:
+            The record id of the latest published version.
+
+        Raises:
+            ZenodoError: If the concept record carries no id.
+        """
+        data: dict[str, Any] = self._request(
+            "GET", f"{self.base}/records/{concept_recid}"
+        ).json()
+        latest = data.get("id")
+        if not latest:
+            raise ZenodoError(
+                f"concept record {concept_recid} resolved to no version id"
+            )
+        return int(latest)
+
+    def get_deposition(self, deposition_id: int) -> dict[str, Any]:
+        """Fetch an existing deposition so a *reserved draft* can be filled.
+
+        Zenodo lets you reserve a DOI by creating an empty draft up front, which is the
+        only way to put the final DOI inside the artifact being archived. Neither of the
+        other entry points can then use it: `new_version` needs a **published** record,
+        and `create_and_publish` would mint a brand-new concept DOI and strand the
+        reservation. This returns the draft (including ``links.bucket``) so
+        `publish_reserved_draft` can upload into it.
+
+        Args:
+            deposition_id: Id of the draft (the reserved DOI's record id).
+
+        Returns:
+            The deposition JSON.
+        """
+        data: dict[str, Any] = self._request(
+            "GET", f"{self.base}/deposit/depositions/{deposition_id}"
+        ).json()
+        return data
+
     def list_files(self, deposition_id: int) -> list[dict[str, Any]]:
         """Return the files currently attached to a deposition."""
         data: list[dict[str, Any]] = self._request(
@@ -169,6 +221,34 @@ class ZenodoPublisher:
         """
         dep = self.create_deposition()
         return self._finalize(dep["id"], dep["links"]["bucket"], files, metadata)
+
+    def publish_reserved_draft(
+        self, draft_id: int, files: list[Path], metadata: dict[str, Any]
+    ) -> dict[str, Any]:
+        """Publish an existing reserved draft, preserving its pre-reserved DOI.
+
+        Use this for the **first** release of a record whose DOI was reserved in advance.
+        Any placeholder files already on the draft are cleared first. Later releases use
+        `publish_new_version` instead.
+
+        Args:
+            draft_id: Id of the reserved, unpublished draft.
+            files: The artifacts to attach.
+            metadata: Record metadata, including ``version``.
+
+        Returns:
+            ``{doi, concept_doi, record_url, deposition_id}``.
+
+        Raises:
+            ZenodoError: If the deposition has already been published.
+        """
+        draft = self.get_deposition(draft_id)
+        if draft.get("submitted"):
+            raise ZenodoError(
+                f"deposition {draft_id} is already published; use publish_new_version"
+            )
+        self.clear_files(draft_id)
+        return self._finalize(draft_id, draft["links"]["bucket"], files, metadata)
 
     def publish_new_version(
         self, record_id: int, files: list[Path], metadata: dict[str, Any]

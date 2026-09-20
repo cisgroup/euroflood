@@ -8,6 +8,7 @@ from typing import Any
 import geopandas as gpd
 
 from ..services.raster_ops import is_hazard
+from . import _basemaps as basemaps
 from ._colormaps import (
     DEPTH_CMAP,
     RECURRENCE_CMAP,
@@ -44,32 +45,50 @@ def _draw_boundary(ax: Any, roi: Any) -> None:
     )
 
 
-_STATIC_TILES = {
-    "grayscale": "CartoDB.Positron",
-    "greyscale": "CartoDB.Positron",
-    "gray": "CartoDB.Positron",
-    "grey": "CartoDB.Positron",
-    "light": "CartoDB.Positron",
-    "dark": "CartoDB.DarkMatter",
-    "osm": "OpenStreetMap.Mapnik",
-    "openstreetmap": "OpenStreetMap.Mapnik",
-}
+# Presets live in _basemaps so the static and interactive paths cannot drift.
 
 
 def _add_basemap(ax: Any, *, tiles: str = "OpenStreetMap") -> None:
     """Add a contextily XYZ basemap under a WGS84 axes (needs network).
 
-    ``tiles`` accepts a preset (``"grayscale"``, ``"dark"``, ...) or a contextily
-    provider path such as ``"CartoDB.Positron"``.
+    ``tiles`` accepts a preset (``"grayscale"``, ``"dark"``, ...) or a provider path
+    such as ``"Esri.WorldImagery"``.
+
+    `TILE_HEADERS` is not optional: contextily's default User-Agent is a random
+    ``contextily-<hex>``, which OpenStreetMap blocks outright with a 403 "Access
+    blocked" tile. Identifying the caller is what their usage policy asks for.
     """
     cx = require("contextily")
-    key = _STATIC_TILES.get(str(tiles).lower(), tiles)
-    provider = cx.providers
-    for part in key.split("."):
-        provider = getattr(provider, part)
+    path, invert = basemaps.resolve(tiles)
     # zorder=-1 keeps the basemap *behind* the flood raster (an AxesImage at the
     # default zorder 0); contextily otherwise draws it on top and mutes the overlay.
-    cx.add_basemap(ax, crs="EPSG:4326", source=provider, attribution_size=6, zorder=-1)
+    cx.add_basemap(
+        ax,
+        crs="EPSG:4326",
+        source=basemaps.provider(path),
+        attribution_size=6,
+        zorder=-1,
+        headers=basemaps.TILE_HEADERS,
+    )
+    if invert:
+        _invert_basemap(ax)
+
+
+def _invert_basemap(ax: Any) -> None:
+    """Invert the basemap tiles in place, leaving every overlay untouched.
+
+    The only keyless dark basemaps were CARTO's, which now arrive watermarked, so a
+    dark backdrop is made by inverting a light one. Only the ``zorder=-1`` image that
+    `_add_basemap` just added is touched.
+    """
+    np = require("numpy")
+    for image in ax.images:
+        if image.get_zorder() != -1:
+            continue
+        arr = np.asarray(image.get_array(), dtype="float32")
+        if arr.ndim == 3 and arr.shape[2] >= 3:
+            arr[..., :3] = 255.0 - arr[..., :3]
+            image.set_data(arr.astype("uint8"))
 
 
 def _recurrence_title(event_id: int | None) -> str:

@@ -29,7 +29,7 @@ from .index_repository import _GDAL_ENV
 
 logger = structlog.get_logger(__name__)
 
-# Module-level constants so they are not constructed in a default argument (ruff B008).
+# Module-level constants, so they are not constructed in a default argument.
 WGS84 = CRS("EPSG:4326")
 # Equal-area CRS (EASE-Grid 2.0 global) for honest km² areas.
 EQUAL_AREA_CRS = CRS("EPSG:6933")
@@ -227,7 +227,6 @@ class RasterOps:
         """
         try:
             with rasterio.open(source_path) as src:
-                # Handle CRS mismatch
                 if src.crs:
                     geom_local = RasterOps.project_geometry(geometry, src.crs)
                 else:
@@ -243,13 +242,11 @@ class RasterOps:
                     out_image = src.read(window=window)
                     out_transform = src.window_transform(window)
 
-                # Check for emptiness
                 if out_image.size == 0 or (
                     src.nodata is not None and (out_image == src.nodata).all()
                 ):
                     return False
 
-                # Write Output
                 profile = src.profile.copy()
                 profile.update(
                     {
@@ -260,7 +257,6 @@ class RasterOps:
                         "tiled": False,  # Small crops shouldn't be tiled
                     }
                 )
-                # Remove conflicting keys
                 profile.pop("blockxsize", None)
                 profile.pop("blockysize", None)
 

@@ -23,6 +23,7 @@ from .api import (
     floods,
     hazard,
     mirror,
+    nuts,
     offline,
     verify,
 )
@@ -80,6 +81,7 @@ __all__ = [
     "footprints",
     "hazard",
     "mirror",
+    "nuts",
     "offline",
     "open_depth",
     "plot",

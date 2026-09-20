@@ -11,13 +11,13 @@ import rasterio.crs
 from rasterio.transform import from_origin
 
 from euroflood.exceptions import ProcessingError
-from euroflood.services.processor import RasterProcessor
+from euroflood.services.processor import ProcessOutcome, RasterProcessor
 
 
 def test_process_valid_tif(sample_tif_path, mock_settings):
     """Test processing a valid TIF creates a parquet file."""
     processor = RasterProcessor()
-    count = processor.process(sample_tif_path, global_id=99, year="2020")
+    count = processor.process(sample_tif_path, global_id=99, year="2020").points
 
     assert count > 0
 
@@ -31,22 +31,53 @@ def test_process_valid_tif(sample_tif_path, mock_settings):
 
 
 def test_process_missing_file():
-    """Test gracefull handling of missing input."""
+    """An absent source tif is reported as missing, not as an empty raster."""
     processor = RasterProcessor()
-    count = processor.process(Path("ghost.tif"), 1, "2020")
-    assert count == 0
+    assert processor.process(Path("ghost.tif"), 1, "2020") == ProcessOutcome(
+        "missing_file", 0
+    )
 
 
-def test_process_cache_hit(sample_tif_path, mock_settings):
-    """Test that existing parquet files are not re-processed."""
+def test_process_cache_hit_reports_the_stored_point_count(
+    sample_tif_path, mock_settings
+):
+    """A cache hit is `cached` with the parquet's real row count, never 0.
+
+    Returning a bare 0 here made the ingestion ledger record an already-ingested
+    file as process_status="empty", points=0 -- so a build spread over several
+    resumed runs summed far short of the index it had just written.
+    """
     processor = RasterProcessor()
     year_dir = mock_settings.cache_dir / "parquet" / "2020"
     year_dir.mkdir(parents=True)
-    parquet_path = year_dir / "test_flood_id1.parquet"
-    parquet_path.touch()
+    parquet_path = year_dir / f"{sample_tif_path.stem}_id1.parquet"
+    pd.DataFrame(
+        {
+            "col": np.arange(7, dtype="uint32"),
+            "row": np.arange(7, dtype="uint32"),
+            "flood_id": np.ones(7, dtype="uint32"),
+        }
+    ).to_parquet(parquet_path)
+    before = parquet_path.read_bytes()
 
-    count = processor.process(sample_tif_path, global_id=1, year="2020")
-    assert count == 0
+    assert processor.process(sample_tif_path, global_id=1, year="2020") == (
+        ProcessOutcome("cached", 7)
+    )
+    assert parquet_path.read_bytes() == before, "a cache hit must not rewrite the file"
+
+
+def test_process_rebuilds_an_unreadable_cached_parquet(sample_tif_path, mock_settings):
+    """A parquet torn by a crash mid-write is discarded and re-processed."""
+    processor = RasterProcessor()
+    year_dir = mock_settings.cache_dir / "parquet" / "2020"
+    year_dir.mkdir(parents=True)
+    parquet_path = year_dir / f"{sample_tif_path.stem}_id1.parquet"
+    parquet_path.write_bytes(b"PAR1-truncated")
+
+    outcome = processor.process(sample_tif_path, global_id=1, year="2020")
+    assert outcome.status == "complete"
+    assert outcome.points > 0
+    assert pd.read_parquet(parquet_path).shape[0] == outcome.points
 
 
 def test_process_empty_data(mocker, sample_tif_path):
@@ -66,7 +97,7 @@ def test_process_empty_data(mocker, sample_tif_path):
 
     mocker.patch("rasterio.open", return_value=mock_src)
 
-    count = processor.process(sample_tif_path, 1, "2020")
+    count = processor.process(sample_tif_path, 1, "2020").points
     assert count == 0
 
 
@@ -100,7 +131,7 @@ def test_process_reprojection_path(mocker, sample_tif_path):
         return_value=np.array([True]),
     )
 
-    count = processor.process(sample_tif_path, 1, "2020")
+    count = processor.process(sample_tif_path, 1, "2020").points
 
     mock_transform.assert_called_once()
     assert count == 1
@@ -124,7 +155,9 @@ def test_process_missing_crs_is_skipped(mocker, sample_tif_path):
     data[0, 0] = 1
     _mock_src(mocker, data, nodata=0, crs=None)
 
-    assert RasterProcessor().process(sample_tif_path, 1, "2020") == 0
+    assert RasterProcessor().process(sample_tif_path, 1, "2020") == ProcessOutcome(
+        "missing_crs", 0
+    )
 
 
 def test_process_keeps_values_when_nodata_absent(mocker, sample_tif_path):
@@ -133,12 +166,14 @@ def test_process_keeps_values_when_nodata_absent(mocker, sample_tif_path):
     data[0, 0] = 9999  # the old hardcoded 9999 fallback would have dropped this
     _mock_src(mocker, data, nodata=None, crs=rasterio.crs.CRS.from_epsg(4326))
 
-    assert RasterProcessor().process(sample_tif_path, 1, "2020") == 1
+    assert RasterProcessor().process(sample_tif_path, 1, "2020").points == 1
 
 
 def test_process_flood_id_uint32_no_overflow(sample_tif_path, mock_settings):
     """flood_id is uint32: a global_id above 65535 is stored without wrapping."""
-    count = RasterProcessor().process(sample_tif_path, global_id=70000, year="2020")
+    count = (
+        RasterProcessor().process(sample_tif_path, global_id=70000, year="2020").points
+    )
     assert count > 0
 
     parquet = (
@@ -172,7 +207,7 @@ def test_process_points_outside_grid(mocker, sample_tif_path):
 
     # 2. Run
     # sample_tif_path has valid points, but we force them to be "invalid" via the mock
-    count = processor.process(sample_tif_path, 1, "2020")
+    count = processor.process(sample_tif_path, 1, "2020").points
 
     # 3. Assert 0 points processed
     assert count == 0
@@ -190,7 +225,7 @@ def test_process_dedups_grid_cells(mocker, sample_tif_path):
         return_value=np.full(10, True),
     )
 
-    count = RasterProcessor().process(sample_tif_path, 1, "2020")
+    count = RasterProcessor().process(sample_tif_path, 1, "2020").points
     assert count == 1  # 10 source pixels, one cell -> a single de-duplicated row
 
 
@@ -213,7 +248,7 @@ def test_process_equi7_real_crs(tmp_path, mock_settings):
     ) as dst:
         dst.write(data, 1)
 
-    count = RasterProcessor().process(tif, global_id=5, year="2024")
+    count = RasterProcessor().process(tif, global_id=5, year="2024").points
     assert count == 1  # reprojected from Equi7 -> inside the grid -> one cell
 
     df = pd.read_parquet(
@@ -234,9 +269,13 @@ def test_processor_runs_in_real_process_pool(sample_tif_path, mock_settings):
 
     with ProcessPoolExecutor(max_workers=1) as pool:
         future = pool.submit(processor.process, sample_tif_path, 7, "2021")
-        count = future.result(timeout=120)
+        outcome = future.result(timeout=120)
 
-    assert count > 0
+    # Also pins that ProcessOutcome survives the pickle boundary back to the
+    # parent, which is where the ingestion ledger reads its status from.
+    assert isinstance(outcome, ProcessOutcome)
+    assert outcome.status == "complete"
+    assert outcome.points > 0
     parquet_dir = mock_settings.cache_dir / "parquet" / "2021"
     assert any(parquet_dir.glob("*.parquet"))
 
@@ -252,7 +291,9 @@ def test_process_global_id_overflow_raises(sample_tif_path):
 def test_process_global_id_at_uint32_max_is_allowed(sample_tif_path, mock_settings):
     """Exactly uint32 max is the inclusive boundary and must still process."""
     gid = int(np.iinfo("uint32").max)
-    count = RasterProcessor().process(sample_tif_path, global_id=gid, year="2020")
+    count = (
+        RasterProcessor().process(sample_tif_path, global_id=gid, year="2020").points
+    )
     assert count > 0
     df = pd.read_parquet(
         mock_settings.cache_dir / "parquet" / "2020" / f"test_flood_id{gid}.parquet"
@@ -269,7 +310,7 @@ def test_process_max_plausible_depth_filters_deep_pixels(
     data[2, 2] = 3.0
     data[7, 7] = 9999.0
     _mock_src(mocker, data, nodata=-1.0, crs=rasterio.crs.CRS.from_epsg(4326))
-    count = RasterProcessor().process(sample_tif_path, global_id=1, year="2020")
+    count = RasterProcessor().process(sample_tif_path, global_id=1, year="2020").points
     assert count == 1
 
 
@@ -281,4 +322,6 @@ def test_process_max_plausible_depth_all_filtered_returns_zero(
     data = np.zeros((10, 10), dtype=np.float32)
     data[3, 3] = 50.0
     _mock_src(mocker, data, nodata=-1.0, crs=rasterio.crs.CRS.from_epsg(4326))
-    assert RasterProcessor().process(sample_tif_path, global_id=1, year="2020") == 0
+    assert (
+        RasterProcessor().process(sample_tif_path, global_id=1, year="2020").points == 0
+    )

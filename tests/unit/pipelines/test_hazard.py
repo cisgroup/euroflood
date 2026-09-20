@@ -48,6 +48,101 @@ def _patch_tiles(mocker, synth_rp_tile, mapping):
 
 
 # --- query -----------------------------------------------------------------
+def test_hazard_bbox_in_projected_crs_selects_the_same_tiles(hazard_env):
+    """ROI_SINGLE expressed in ETRS89-LAEA metres hits the same tile as in lon/lat."""
+    from pyproj import Transformer
+
+    to_laea = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+    reference = ef.hazard(bbox=ROI_SINGLE, return_period=100)
+    cat = ef.hazard(
+        bbox=to_laea.transform_bounds(*ROI_SINGLE), crs="EPSG:3035", return_period=100
+    )
+    assert list(cat["n_tiles"]) == list(reference["n_tiles"]) == [1]
+    assert cat.crs.to_epsg() == 4326
+    # The LAEA box is the *envelope* of the lon/lat ROI's projected image, so it
+    # covers the original ROI (up to float rounding on the shared corners) and is
+    # a little larger (~1.5 % here), not identical.
+    uncovered = reference.geometry.iloc[0].difference(cat.geometry.iloc[0])
+    assert uncovered.area < 1e-9
+    assert cat["area_km2"].iloc[0] == pytest.approx(
+        reference["area_km2"].iloc[0], rel=0.03
+    )
+
+
+def test_hazard_nuts_region_selects_tiles(hazard_env, mocker):
+    """A NUTS identifier resolves to its boundary, which drives the tile lookup."""
+    from euroflood.services.nuts import NutsRepository
+
+    mocker.patch.object(NutsRepository, "geometry", return_value=box(*ROI_SINGLE))
+    cat = ef.hazard(nuts="NL22", return_period=100)
+    assert list(cat["n_tiles"]) == [1]
+    assert cat.geometry.iloc[0].bounds == pytest.approx(ROI_SINGLE)
+
+
+def test_resolve_hazard_roi_treats_nuts_as_a_region(hazard_env, mocker):
+    """nuts= is a region selection, not the 'no ROI, every tile' sentinel."""
+    from euroflood.pipelines.hazard import _resolve_hazard_roi
+    from euroflood.services.location import LocationResolver
+    from euroflood.services.nuts import NutsRepository
+
+    mocker.patch.object(NutsRepository, "geometry", return_value=box(*ROI_SINGLE))
+    roi = _resolve_hazard_roi(
+        LocationResolver(settings=hazard_env),
+        None,
+        point=None,
+        radius_m=0.0,
+        bbox=None,
+        shapefile=None,
+        nuts="NL22",
+        buffer_m=0.0,
+        crs=None,
+        level=None,
+        shape="exact",
+    )
+    assert roi is not None and roi.bounds == pytest.approx(ROI_SINGLE)
+
+
+def test_mirror_and_verify_hazard_forward_nuts(hazard_env, mocker):
+    from euroflood.pipelines.hazard import verify_hazard_mirror
+    from euroflood.services.location import LocationResolver
+    from euroflood.services.nuts import NutsRepository
+
+    mocker.patch.object(NutsRepository, "geometry", return_value=box(*ROI_SINGLE))
+    spy = mocker.spy(LocationResolver, "resolve")
+    res = mirror_hazard(nuts="NL22", return_period=100, dry_run=True)
+    assert spy.call_args.kwargs["nuts"] == "NL22"
+    assert res.n_expected == 1
+    verify_hazard_mirror(nuts="NL22", return_period=100)
+    assert spy.call_args.kwargs["nuts"] == "NL22"
+
+
+def test_hazard_crs_without_coordinates_raises(hazard_env):
+    """A bare crs= must not silently turn into 'mirror every tile'."""
+    from euroflood.exceptions import CRSError
+    from euroflood.pipelines.hazard import verify_hazard_mirror
+
+    with pytest.raises(CRSError, match="no coordinates"):
+        mirror_hazard(crs="EPSG:28992", return_period=100, dry_run=True)
+    with pytest.raises(CRSError, match="no coordinates"):
+        verify_hazard_mirror(crs="EPSG:28992", return_period=100)
+
+
+def test_mirror_and_verify_hazard_forward_crs(hazard_env, mocker):
+    from pyproj import Transformer
+
+    from euroflood.pipelines.hazard import verify_hazard_mirror
+    from euroflood.services.location import LocationResolver
+
+    spy = mocker.spy(LocationResolver, "resolve")
+    to_laea = Transformer.from_crs("EPSG:4326", "EPSG:3035", always_xy=True)
+    laea = to_laea.transform_bounds(*ROI_SINGLE)
+    res = mirror_hazard(bbox=laea, crs="EPSG:3035", return_period=100, dry_run=True)
+    assert spy.call_args.kwargs["crs"] == "EPSG:3035"
+    assert res.n_expected == 1  # the same single tile as the lon/lat ROI
+    verify_hazard_mirror(bbox=laea, crs="EPSG:3035", return_period=100)
+    assert spy.call_args.kwargs["crs"] == "EPSG:3035"
+
+
 def test_query_one_row_per_return_period(hazard_env):
     cat = ef.hazard(bbox=ROI_SINGLE, return_period=[100, 500])
 

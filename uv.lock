@@ -708,7 +708,7 @@ wheels = [
 
 [[package]]
 name = "euroflood"
-version = "0.3.0"
+version = "0.3.1"
 source = { editable = "." }
 dependencies = [
     { name = "beautifulsoup4" },
@@ -742,6 +742,7 @@ viz = [
     { name = "folium" },
     { name = "ipywidgets" },
     { name = "matplotlib" },
+    { name = "xyzservices" },
 ]
 
 [package.dev-dependencies]
@@ -796,6 +797,7 @@ requires-dist = [
     { name = "shapely", specifier = ">=2.1.2,<3.0.0" },
     { name = "structlog", specifier = ">=25.5.0,<26.0.0" },
     { name = "tenacity", specifier = ">=9.1.2,<10.0.0" },
+    { name = "xyzservices", marker = "extra == 'viz'", specifier = ">=2024.4" },
 ]
 provides-extras = ["viz", "publish"]
 

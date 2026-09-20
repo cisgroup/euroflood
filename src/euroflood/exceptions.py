@@ -31,6 +31,14 @@ class GeocodingError(EuroFloodError):
     """Raised when a place name cannot be resolved."""
 
 
+class CRSError(GeocodingError):
+    """Raised when a coordinate reference system is invalid, conflicts with an input's own CRS, or the coordinates do not fit it."""
+
+
+class NutsError(GeocodingError):
+    """Raised when a NUTS identifier is malformed or unknown, names a territory without a boundary, or its boundary file is unavailable."""
+
+
 class CacheSchemaError(EuroFloodError):
     """Raised when the on-disk cache is missing or incompatible with the code."""
 

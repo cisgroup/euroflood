@@ -1,5 +1,5 @@
 cff-version: 1.2.0
-message: "If you use EuroFlood, please cite this software and the underlying dataset."
+message: "If you use EuroFlood, please cite this software (DOI below) and the index dataset it reads, which carries its own DOI."
 title: "EuroFlood: query Europe's satellite flood-depth maps by place and time"
 abstract: >-
   A lightweight, cloud-native Python tool that turns the JRC / Copernicus
@@ -7,12 +7,21 @@ abstract: >-
   discover which flood events touched a region (and when) and download only the
   depth rasters you need.
 type: software
-version: "0.3.0"
-date-released: "2026-09-18"
+version: "0.3.1"
+date-released: "2026-09-20"
+# The software's own DOI. CFF's top-level `doi` is what GitHub's "Cite this
+# repository" surfaces, so it must be the library, not the dataset it reads.
+doi: "10.5281/zenodo.22837458"
 identifiers:
   - type: doi
+    value: "10.5281/zenodo.22837458"
+    description: "Concept DOI for the EuroFlood SOFTWARE (always resolves to the latest release)."
+  - type: doi
+    value: "10.5281/zenodo.22837459"
+    description: "DOI for v0.3.0 of the EuroFlood software."
+  - type: doi
     value: "10.5281/zenodo.21284459"
-    description: "Concept DOI for the EuroFlood index dataset (always resolves to the latest version)."
+    description: "Concept DOI for the EuroFlood INDEX DATASET (always resolves to the latest version)."
   - type: doi
     value: "10.5281/zenodo.22834747"
     description: "DOI for v1.1.0 of the EuroFlood index dataset (current)."

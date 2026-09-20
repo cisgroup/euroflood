@@ -21,16 +21,9 @@
 # A worked example with the [`euroflood`](https://github.com/cisgroup/euroflood) package,
 # reproducing the paper's headline application (main text Section 7.1, Fig. 5). It answers a
 # continental question, *how often has each place in Europe been detected as flooded over 2015 to
-# 2024?*, from a **single discovery query**. Answering it from the raw archive would mean
+# 2025?*, from a **single discovery query**. Answering it from the raw archive would mean
 # downloading, aligning, and stacking thousands of event rasters; with the index it is a windowed
 # read, no rasters downloaded.
-
-# %% [markdown]
-# > **Outputs captured against index v1.0.0 (2015 to 2024).**
-# > The cells below are rendered from stored outputs and are not re-executed in CI.
-# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
-# > returns more events than the counts shown here. The analysis and its conclusions are
-# > unchanged.
 
 # %% [markdown]
 # ## The archive and the index
@@ -111,7 +104,7 @@ hist = pd.read_csv(S.RESULTS / "recurrence_hist.csv")
 fig, ax = plt.subplots(figsize=(6.6, 3.4))
 ax.bar(hist["recurrence"], hist["cells"], width=1.0, color="#1f5c8b")
 ax.set_yscale("log")
-ax.set_xlabel("times a cell was detected flooded (2015 to 2024)")
+ax.set_xlabel("times a cell was detected flooded (2015 to 2025)")
 ax.set_ylabel("number of cells (log scale)")
 ax.set_title("Europe: distribution of per-cell flood recurrence")
 ax.margins(x=0.01)

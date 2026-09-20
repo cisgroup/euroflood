@@ -6,7 +6,8 @@
 [![docs](https://img.shields.io/badge/docs-mkdocs--material-blue)](https://cisgroup.github.io/euroflood/)
 [![Python](https://img.shields.io/badge/python-3.13%2B-blue)](https://www.python.org/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://github.com/cisgroup/euroflood/blob/main/LICENSE)
-[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21284459.svg)](https://doi.org/10.5281/zenodo.21284459)
+[![DOI (software)](https://img.shields.io/badge/DOI%20(software)-10.5281%2Fzenodo.22837458-0277bd)](https://doi.org/10.5281/zenodo.22837458)
+[![DOI (index)](https://img.shields.io/badge/DOI%20(index)-10.5281%2Fzenodo.21284459-0277bd)](https://doi.org/10.5281/zenodo.21284459)
 [![Ruff](https://img.shields.io/endpoint?url=https://raw.githubusercontent.com/astral-sh/ruff/main/assets/badge/v2.json)](https://github.com/astral-sh/ruff)
 
 **Query Europe's observed satellite flood-depth maps by place and time: lightweight, cloud-native, `pip`-installable.**
@@ -50,9 +51,10 @@ pip install euroflood
 ```python
 import euroflood as ef
 
-# Discover observed flood events (place name, bbox, point+radius, or a shapefile)
-cat = ef.floods("Zutphen, Netherlands")    # -> a GeoDataFrame, one row per event
+# Discover observed flood events (place name, bbox, point+radius, ...)
+cat = ef.floods("Zutphen, Netherlands")    # a GeoDataFrame
 cat = ef.floods(bbox=(6.14, 52.09, 6.27, 52.17), start=2024, end=2024)
+cat = ef.floods(nuts="NL22")               # a Eurostat NUTS region
 
 # Extract: download + crop the depth rasters for the selected events
 cat[cat["date"] >= "2024-01-01"].download("out/")
@@ -92,21 +94,6 @@ cat.head(3).download().plot(depth=True)    # fetch + render the actual depth ras
 <p align="center"><em>A decade at Zutphen: per-cell recurrence, per-event depth, and observed depths against the modelled CEMS-GLOFAS return-period curve (see the <a href="https://cisgroup.github.io/euroflood/case-studies/02_zutphen_decade/">case study</a>).</em></p>
 
 See the [Visualize tutorial](https://cisgroup.github.io/euroflood/tutorials/03_visualize/).
-
-## How the data is served
-
-- **Zero-config (default):** the published index is read remotely: the COG streams via
-  `/vsicurl` and the ~19 MB dictionary + events table are cached locally on first use
-  (SHA-256-verified). Set `EUROFLOOD_INDEX_MODE=local` to only ever use a local copy.
-- **Offline / HPC:** `euroflood mirror all --bbox <…> -r 100` stages a region's catalogue,
-  flood depth maps, and hazard tiles into the cache (checksum-ledgered; `euroflood verify all
-  --deep` gates readiness); then `EUROFLOOD_OFFLINE=1` runs `floods()`/`hazard()` fully offline.
-  Mirror layers independently with `mirror index|floods|hazard`.
-- **Build it yourself:** producers can rebuild the index from the source archive
-  (`euroflood fetch-sources` → `ingest` → `build-index`); see the [HPC runbook](https://cisgroup.github.io/euroflood/hpc-runbook/).
-
-Place names resolve **online-first** (OpenStreetMap Nominatim, falling back to an offline
-Eurostat NUTS dataset); set `EUROFLOOD_GEOCODER_BACKEND=local` to stay fully offline.
 
 ## Documentation
 

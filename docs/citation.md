@@ -8,19 +8,33 @@ If EuroFlood helps your work, please cite **the software**, **the index dataset*
 ## Cite the software
 
 The repository ships a [`CITATION.cff`](https://github.com/cisgroup/euroflood/blob/main/CITATION.cff),
-so GitHub's **"Cite this repository"** button generates an up-to-date reference. A BibTeX
-entry for the current release:
+so GitHub's **"Cite this repository"** button generates an up-to-date reference.
+
+Each release is archived on Zenodo. Cite the **version** you used for reproducibility, or
+the **concept DOI** to point at whatever is latest:
+
+- **v0.3.0:** DOI [`10.5281/zenodo.22837459`](https://doi.org/10.5281/zenodo.22837459)
+- **Concept DOI** (always resolves to the latest release):
+  [`10.5281/zenodo.22837458`](https://doi.org/10.5281/zenodo.22837458)
+
+A BibTeX entry for the current release (the concept DOI resolves to it):
 
 ```bibtex
 @software{hackl_euroflood,
-  author  = {Hackl, J\"urgen},
-  title   = {{EuroFlood: query Europe's satellite flood-depth maps by place and time}},
-  year    = {2026},
-  version = {0.3.0},
-  license = {MIT},
-  url     = {https://github.com/cisgroup/euroflood}
+  author    = {Hackl, J\"urgen},
+  title     = {{EuroFlood: query Europe's satellite flood-depth maps by place and time}},
+  year      = {2026},
+  version   = {0.3.1},
+  license   = {MIT},
+  publisher = {Zenodo},
+  doi       = {10.5281/zenodo.22837458},
+  url       = {https://doi.org/10.5281/zenodo.22837458}
 }
 ```
+
+!!! note "Software and dataset carry different DOIs"
+    The DOIs above identify the **library**. The flood index it reads is a separate
+    artifact with its own DOI, below. Citing one does not cite the other.
 
 ## Cite the index dataset
 

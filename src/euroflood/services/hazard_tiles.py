@@ -26,7 +26,7 @@ from .downloader import DownloadService
 
 logger = structlog.get_logger(__name__)
 
-# Confirmed live against the JRC FTP: the RP{n} folders that exist (note 75/200).
+# The RP{n} folders JRC publishes (note 75 and 200).
 SUPPORTED_RETURN_PERIODS: tuple[int, ...] = (10, 20, 50, 75, 100, 200, 500)
 
 
@@ -68,7 +68,7 @@ class HazardTileIndex:
             download_dir=self.settings.get_hazard_dir(), settings=self.settings
         )
         self.allow_download = allow_download
-        self._tiles: gpd.GeoDataFrame | None = None  # lazy
+        self._tiles: gpd.GeoDataFrame | None = None
 
     # --- index loading -----------------------------------------------------
     def _ensure_index(self) -> Path:

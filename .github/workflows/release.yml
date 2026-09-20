@@ -27,6 +27,14 @@ jobs:
         # the gate (hence the whole release) fails.
         run: uv sync --extra viz
 
+      - name: Lockfile is in sync with pyproject
+        # Guards the same drift the tag check cannot see: `uv sync` re-resolves silently,
+        # so a version bump without `uv lock` would otherwise ship a stale lockfile.
+        run: uv lock --check
+
+      - name: Declared versions agree
+        run: uv run python scripts/check_versions.py
+
       - name: Verify tag matches package version
         run: |
           pkg=$(uv run python -c "import tomllib, pathlib; print(tomllib.loads(pathlib.Path('pyproject.toml').read_text())['project']['version'])")
@@ -69,3 +77,41 @@ jobs:
 
       - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
+
+  zenodo:
+    # Archive the released artifacts under the library's Zenodo DOI. Runs AFTER pypi so a
+    # DOI is never minted for a release that failed to reach PyPI: a published Zenodo
+    # record cannot be deleted.
+    needs: [build, pypi]
+    # Required, not belt-and-suspenders: the `build` job has no repository guard, so an
+    # unguarded job here would also run on the private dev repo.
+    if: github.repository == 'cisgroup/euroflood'
+    runs-on: ubuntu-latest
+    environment: zenodo
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+          python-version: "3.13"
+
+      - name: Install dependencies
+        run: uv sync
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+        # The same bytes the pypi job published, so PyPI and Zenodo archive identical
+        # artifacts and nothing is rebuilt.
+
+      - name: Archive on Zenodo
+        env:
+          ZENODO_TOKEN: ${{ secrets.ZENODO_TOKEN }}
+        run: |
+          uv run python scripts/zenodo_software_release.py \
+            --version "${GITHUB_REF_NAME#v}" \
+            --dist dist/ \
+            --concept-recid 22837458

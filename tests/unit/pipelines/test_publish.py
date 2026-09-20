@@ -1,6 +1,7 @@
 """Tests for the publish orchestration (Zenodo), fully mocked."""
 
 import json
+from pathlib import Path
 
 import pytest
 
@@ -276,3 +277,117 @@ def test_source_coop_readme_only_dry_run_lists_just_the_card(built_index):
     assert out["files"] == ["README.md"]
     assert out["readme_only"] is True
     assert not (built_index.settings.cache_dir / "README.md").exists()
+
+
+# --- software archive (separate from the index dataset path) ----------------
+def test_build_software_metadata_is_software_not_dataset():
+    """The two builders describe different artifacts and must not converge."""
+    sw = pub.build_software_metadata("0.3.0")
+    ds = pub.build_zenodo_metadata("1.1.0")
+    assert sw["upload_type"] == "software" and ds["upload_type"] == "dataset"
+    assert sw["license"] == "mit" and ds["license"] == "cc-by-4.0"
+    assert sw["version"] == "0.3.0"
+    # The software record points at the index dataset, not the other way around.
+    rels = {r["relation"]: r["identifier"] for r in sw["related_identifiers"]}
+    assert rels["isSupplementedBy"] == pub.INDEX_CONCEPT_DOI
+
+
+def test_software_metadata_orcid_matches_citation_cff():
+    """Guards the one field that could silently drift from the citation record."""
+    cff = (Path(__file__).resolve().parents[3] / "CITATION.cff").read_text()
+    orcid = pub.build_software_metadata("0.3.0")["creators"][0]["orcid"]
+    assert orcid in cff
+
+
+def test_publish_software_requires_exactly_one_target(tmp_path):
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"x")
+    with pytest.raises(ValueError, match="exactly one"):
+        pub.publish_software_to_zenodo([f], version="0.3.0")
+    with pytest.raises(ValueError, match="exactly one"):
+        pub.publish_software_to_zenodo(
+            [f], version="0.3.0", draft_id=1, concept_recid=2
+        )
+
+
+def test_publish_software_rejects_a_missing_artifact(tmp_path):
+    with pytest.raises(ValueError, match="not found"):
+        pub.publish_software_to_zenodo(
+            [tmp_path / "nope.tar.gz"], version="0.3.0", draft_id=1
+        )
+
+
+def test_publish_software_dry_run_uploads_nothing(tmp_path):
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"x")
+    out = pub.publish_software_to_zenodo(
+        [f], version="0.3.0", draft_id=77, dry_run=True, dotenv=tmp_path / "none"
+    )
+    assert out["dry_run"] is True
+    assert out["mode"] == "reserved-draft"
+    assert out["files"] == ["euroflood-0.3.0.tar.gz"]
+
+
+def test_publish_software_first_release_uses_the_reserved_draft(
+    tmp_path, mocker, monkeypatch
+):
+    monkeypatch.setenv("ZENODO_TOKEN", "tok")
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"x")
+    cls = mocker.patch("euroflood.pipelines.publish.ZenodoPublisher")
+    cls.return_value.publish_reserved_draft.return_value = {
+        "doi": "10.5281/zenodo.22837459",
+        "concept_doi": "10.5281/zenodo.22837458",
+        "record_url": "https://zenodo.org/record/22837459",
+        "deposition_id": 22837459,
+    }
+    out = pub.publish_software_to_zenodo(
+        [f], version="0.3.0", draft_id=22837459, dotenv=tmp_path / "none"
+    )
+    assert out["concept_doi"] == "10.5281/zenodo.22837458"
+    cls.return_value.publish_reserved_draft.assert_called_once()
+    cls.return_value.publish_new_version.assert_not_called()
+
+
+def test_publish_software_later_release_resolves_the_concept_record(
+    tmp_path, mocker, monkeypatch
+):
+    monkeypatch.setenv("ZENODO_TOKEN", "tok")
+    f = tmp_path / "euroflood-0.4.0.tar.gz"
+    f.write_bytes(b"x")
+    cls = mocker.patch("euroflood.pipelines.publish.ZenodoPublisher")
+    cls.return_value.latest_version_id.return_value = 22837459
+    cls.return_value.publish_new_version.return_value = {
+        "doi": "10.5281/zenodo.99",
+        "concept_doi": "10.5281/zenodo.22837458",
+        "record_url": "https://zenodo.org/record/99",
+        "deposition_id": 99,
+    }
+    pub.publish_software_to_zenodo(
+        [f], version="0.4.0", concept_recid=22837458, dotenv=tmp_path / "none"
+    )
+    # It must discover the latest version rather than hard-code a record id.
+    cls.return_value.latest_version_id.assert_called_once_with(22837458)
+    assert cls.return_value.publish_new_version.call_args.args[0] == 22837459
+
+
+def test_publish_software_never_touches_the_index_manifest(
+    built_index, tmp_path, mocker, monkeypatch
+):
+    """Stamping a software DOI into the index manifest would corrupt its provenance."""
+    monkeypatch.setenv("ZENODO_TOKEN", "tok")
+    f = tmp_path / "euroflood-0.3.0.tar.gz"
+    f.write_bytes(b"x")
+    manifest = built_index.settings.get_manifest_path()
+    before = manifest.read_text()
+    cls = mocker.patch("euroflood.pipelines.publish.ZenodoPublisher")
+    cls.return_value.publish_reserved_draft.return_value = {
+        "doi": "d",
+        "concept_doi": "c",
+        "record_url": "u",
+        "deposition_id": 1,
+    }
+    pub.publish_software_to_zenodo(
+        [f], version="0.3.0", draft_id=1, dotenv=tmp_path / "none"
+    )
+    assert manifest.read_text() == before

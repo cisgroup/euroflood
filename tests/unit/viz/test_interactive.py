@@ -97,10 +97,35 @@ def test_explore_footprints_year_folders(two_event_frame):
 
 
 def test_explore_grayscale_tiles(historic_frame):
-    # the grayscale preset resolves to a CartoDB Positron basemap
+    """The grayscale preset resolves to a keyless, unwatermarked provider."""
     m = explore_recurrence(historic_frame, tiles="grayscale")
-    assert any(
-        "cartocdn" in getattr(t, "tiles", "").lower()
-        or "positron" in getattr(t, "tiles", "").lower()
-        for t in _children_of(m, folium.TileLayer)
-    )
+    urls = [
+        str(getattr(t, "tiles", "")).lower() for t in _children_of(m, folium.TileLayer)
+    ]
+    assert any("arcgisonline" in u for u in urls), urls
+
+
+def test_explore_never_serves_watermarked_tiles(historic_frame):
+    """CARTO stamps API KEY REQUIRED across anonymous tiles.
+
+    The reader's browser fetches these URLs, so a watermarked provider defaces the map
+    for whoever opens the notebook. This asserts the whole preset table stays clear of
+    it -- the previous version of this test asserted the opposite and would have locked
+    the defect in.
+    """
+    for preset in ("grayscale", "dark", "osm", "light", "grey"):
+        m = explore_recurrence(historic_frame, tiles=preset)
+        html = m.get_root().render().lower()
+        assert "cartocdn" not in html, f"{preset} still routes through CARTO"
+
+
+def test_explore_dark_inverts_only_the_tile_pane(historic_frame):
+    """No keyless dark basemap exists, so dark is a CSS invert of a light one.
+
+    Leaflet keeps overlays in separate panes, so filtering .leaflet-tile-pane must not
+    touch the flood raster or the boundary.
+    """
+    html = explore_recurrence(historic_frame, tiles="dark").get_root().render()
+    assert ".leaflet-tile-pane{filter:invert(1)" in html.replace(" ", "")
+    light = explore_recurrence(historic_frame, tiles="grayscale").get_root().render()
+    assert "leaflet-tile-pane" not in light

@@ -109,3 +109,35 @@ def test_plot_footprints_returns_axes_with_legend(two_event_frame):
 def test_plot_footprints_via_flag(two_event_frame):
     ax = two_event_frame.plot(footprints=True)
     assert "extents" in ax.get_title().lower()
+
+
+def test_basemap_presets_avoid_watermarked_and_blocked_providers():
+    """Guards the two upstream policies that broke every basemap.
+
+    CARTO watermarks anonymous tiles; OpenStreetMap blocks unidentified clients. The
+    preset table must not route to the former, and the fetch must identify itself.
+    """
+    from euroflood.viz import _basemaps
+
+    assert all("carto" not in p.lower() for p in _basemaps.PRESETS.values())
+    assert "euroflood" in _basemaps.USER_AGENT
+    assert _basemaps.TILE_HEADERS["user-agent"] == _basemaps.USER_AGENT
+
+
+def test_basemap_resolve_maps_presets_and_passes_through_paths():
+    from euroflood.viz import _basemaps
+
+    assert _basemaps.resolve("grayscale") == ("Esri.WorldGrayCanvas", False)
+    assert _basemaps.resolve("GREY") == ("Esri.WorldGrayCanvas", False)
+    # dark has no keyless provider, so it is a light one flagged for inversion
+    path, invert = _basemaps.resolve("dark")
+    assert invert and "carto" not in path.lower()
+    # an unknown name is treated as a provider path, not silently swapped
+    assert _basemaps.resolve("Esri.WorldImagery") == ("Esri.WorldImagery", False)
+
+
+def test_basemap_provider_resolves_a_dotted_path():
+    from euroflood.viz import _basemaps
+
+    prov = _basemaps.provider("Esri.WorldGrayCanvas")
+    assert "arcgisonline" in prov.build_url(z=9, x=268, y=174)

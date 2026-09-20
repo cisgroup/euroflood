@@ -72,6 +72,9 @@ ef.settings.output_dir
 # export EUROFLOOD_GEOCODER_BACKEND=local   # resolve names from the offline NUTS dataset
 # export EUROFLOOD_OFFLINE=1                 # both collections cache-only, geocoder offline
 # euroflood mirror all --bbox 6.1 52 6.3 52.2 -r 100   # stage a region for offline use
+# euroflood floods --bbox 200000 455000 220000 475000 --crs EPSG:28992  # a region in another CRS
+# euroflood nuts Gelderland                  # find a Eurostat NUTS identifier -> NL22
+# euroflood floods --nuts NL22               # every flood in that NUTS region
 # ```
 #
 # …or pass a `bbox=` / `point=` to skip geocoding, and `EUROFLOOD_SHOW_PROGRESS=0` to silence

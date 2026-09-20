@@ -212,6 +212,54 @@ def render_catalogue(
         console.print(Text(f"… and {n - limit} more", style="dim"))
 
 
+_NUTS_COLUMNS = ("NUTS_ID", "LEVL_CODE", "CNTR_CODE", "NAME_LATN")
+_NUTS_LABELS = {
+    "NUTS_ID": "NUTS id",
+    "LEVL_CODE": "level",
+    "CNTR_CODE": "country",
+    "NAME_LATN": "name",
+}
+
+
+def render_nuts(df: pd.DataFrame, *, query: str | None = None, limit: int = 50) -> None:
+    """Render NUTS regions (from `euroflood.nuts`) as a summary line + table (or JSON).
+
+    Args:
+        df: The regions table (a ``DataFrame`` or ``GeoDataFrame``).
+        query: The search text, echoed in the summary line.
+        limit: Max rows shown; the rest are summarized as "… and N more".
+    """
+    if _options.json_mode:
+        _print_json_records(df)
+        return
+
+    n = len(df)
+    summary = Text()
+    summary.append(str(n), style="bold cyan")
+    summary.append(" NUTS region(s)")
+    if query is not None:
+        summary.append(f" for {query!r}")
+    summary.append(".")
+    console = get_console()
+    console.print(summary)
+    if n == 0:
+        return
+
+    columns = [c for c in _NUTS_COLUMNS if c in df.columns]
+    table = Table(box=box.SIMPLE_HEAVY, header_style="bold", pad_edge=False)
+    for column in columns:
+        table.add_column(
+            _NUTS_LABELS.get(column, column),
+            justify="right" if column == "LEVL_CODE" else "left",
+            no_wrap=column == "NUTS_ID",
+        )
+    for _, row in df.head(limit).iterrows():
+        table.add_row(*[str(row[c]) for c in columns])
+    console.print(table)
+    if n > limit:
+        console.print(Text(f"… and {n - limit} more", style="dim"))
+
+
 def _print_json_records(df: pd.DataFrame) -> None:
     """Emit the catalogue (geometry dropped) as JSON records to stdout."""
     frame = df.drop(columns="geometry") if "geometry" in df.columns else df

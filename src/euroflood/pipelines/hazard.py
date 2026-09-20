@@ -11,7 +11,7 @@ tiles for offline/local use. Reuses ``LocationResolver``, ``DownloadService``,
 from __future__ import annotations
 
 import json
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -22,7 +22,7 @@ import structlog
 from .._progress import file_progress
 from ..config import Settings, get_settings
 from ..core.manifest import file_record
-from ..exceptions import HazardError
+from ..exceptions import CRSError, HazardError
 from ..services.downloader import DownloadService
 from ..services.hazard_tiles import (
     SUPPORTED_RETURN_PERIODS,
@@ -46,7 +46,7 @@ _HAZARD_TILE_BYTES_EST = 1_350_000
 
 logger = structlog.get_logger(__name__)
 
-# Declared NoData of the GLOFAS depth tiles (verified live).
+# Declared NoData of the GLOFAS depth tiles.
 HAZARD_NODATA = -9999.0
 
 # Public hazard catalogue schema (EPSG:4326). One row per return period.
@@ -204,7 +204,9 @@ class HazardPipeline:
         radius_m: float = 0.0,
         bbox: tuple[float, float, float, float] | None = None,
         shapefile: str | Path | None = None,
+        nuts: str | Sequence[str] | None = None,
         buffer_m: float = 0.0,
+        crs: Any = None,
         return_period: int | list[int] | None = None,
         level: int | None = None,
         shape: str = "exact",
@@ -230,7 +232,9 @@ class HazardPipeline:
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             level=level,
             shape=shape,
         )
@@ -359,8 +363,8 @@ def download_hazard_catalogue(
                 # instead of treating it as a skippable partial-tile set.
                 if settings.offline_hazard:
                     raise
-                # Online per-return-period fail-closed: skip this RP (write nothing:
-                # an absent raster is honest and is not the silent truncation of #25)
+                # Online per-return-period fail-closed: skip this RP (write nothing: an
+                # absent raster is honest, a partial one would be a silent truncation)
                 # rather than aborting the whole sweep, so a transient failure on one
                 # RP does not discard the complete sibling RPs. A total failure is
                 # still surfaced loudly after the loop.
@@ -413,12 +417,29 @@ def _resolve_hazard_roi(
     radius_m: float,
     bbox: tuple[float, float, float, float] | None,
     shapefile: str | Path | None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float,
+    crs: Any = None,
     level: int | None,
     shape: str,
 ) -> Any:
-    """Resolve the ROI args to a geometry, or ``None`` when none were given (all tiles)."""
-    if region is None and point is None and bbox is None and shapefile is None:
+    """Resolve the ROI args to a geometry, or ``None`` when none were given (all tiles).
+
+    A bare ``crs`` with no coordinates is an error rather than "all tiles": a
+    forgotten ``bbox`` must not start a global multi-GB tile download.
+    """
+    if (
+        region is None
+        and point is None
+        and bbox is None
+        and shapefile is None
+        and nuts is None
+    ):
+        if crs is not None:
+            raise CRSError(
+                "crs= was given but no coordinates: pass bbox=, point= or a geometry "
+                "in that CRS, or drop crs= to mirror every tile."
+            )
         return None
     return resolver.resolve(
         region,
@@ -426,7 +447,9 @@ def _resolve_hazard_roi(
         radius_m=radius_m,
         bbox=bbox,
         shapefile=shapefile,
+        nuts=nuts,
         buffer_m=buffer_m,
+        crs=crs,
         level=level,
         shape=shape,
     )
@@ -454,7 +477,9 @@ def mirror_hazard(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     return_period: int | list[int] | None = None,
     level: int | None = None,
     shape: str = "exact",
@@ -477,11 +502,18 @@ def mirror_hazard(
     Args:
         region: ROI selection (place / geometry / bbox tuple), as `hazard`. Omit
             every ROI argument to mirror all tiles globally.
-        point: A (lat, lon) point; combine with ``radius_m``.
-        radius_m: Radius in metres around ``point``.
-        bbox: A (minx, miny, maxx, maxy) bounding box (WGS84).
+        point: A ``(lat, lon)`` point in WGS 84, or ``(x, y)`` in a projected
+            ``crs``; combine with ``radius_m``.
+        radius_m: Radius in ground metres around ``point``.
+        bbox: A ``(minx, miny, maxx, maxy)`` bounding box in WGS 84 lon/lat, or in
+            ``crs``.
         shapefile: Path to a vector file used as the ROI.
-        buffer_m: Optional extra metric buffer around the ROI.
+        nuts: One or more Eurostat NUTS identifiers (``"NL22"``, or a list for
+            their union), as in `hazard`.
+        buffer_m: Optional extra buffer around the ROI, in ground metres.
+        crs: Coordinate reference system of ``bbox``/``point``/a bare geometry, as
+            in `hazard`. A bare ``crs`` with no coordinates raises `CRSError`
+            instead of mirroring every tile.
         level: Optional NUTS level filter for place-name resolution.
         shape: ROI shape, ``"exact"``/``"bbox"``/``"hull"`` (see `hazard`).
         return_period: Return period(s) to mirror. ``None`` mirrors all supported.
@@ -502,7 +534,9 @@ def mirror_hazard(
         radius_m=radius_m,
         bbox=bbox,
         shapefile=shapefile,
+        nuts=nuts,
         buffer_m=buffer_m,
+        crs=crs,
         level=level,
         shape=shape,
     )
@@ -567,7 +601,9 @@ def mirror_hazard(
 
     records: dict[str, dict[str, Any]] = {}
     for fn, p in results.items():
-        if p is not None and p.exists():  # guard: mocks may return a phantom path
+        if (
+            p is not None and p.exists()
+        ):  # a download that reported success but wrote nothing
             records[fn] = {
                 **file_record(p),
                 "return_period": expected[fn].return_period,
@@ -608,7 +644,9 @@ def verify_hazard_mirror(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     return_period: int | list[int] | None = None,
     level: int | None = None,
     shape: str = "exact",
@@ -630,7 +668,9 @@ def verify_hazard_mirror(
         radius_m=radius_m,
         bbox=bbox,
         shapefile=shapefile,
+        nuts=nuts,
         buffer_m=buffer_m,
+        crs=crs,
         level=level,
         shape=shape,
     )
@@ -663,7 +703,7 @@ def build_hazard_manifest(settings: Settings | None = None) -> Path:
     ~2.5 GB of tiles: it pins the JRC base URL, the model version, the return
     periods, the deterministic filename/URL templates, and a frozen copy +
     checksum of ``tile_extents.geojson`` (downloaded on first use). The consumer
-    keeps reading JRC tiles via ``/vsicurl``. Re-hosting is an opt-in for 5b.
+    keeps reading JRC tiles via ``/vsicurl``.
     """
     from ..core.manifest import INDEX_SCHEMA_VERSION, file_records
 

@@ -52,6 +52,84 @@ def load_dotenv(path: Path) -> None:
             os.environ.setdefault(key.strip(), val.strip().strip("'\""))
 
 
+SOFTWARE_CONCEPT_DOI = "10.5281/zenodo.22837458"
+INDEX_CONCEPT_DOI = "10.5281/zenodo.21284459"
+_REPO_URL = "https://github.com/cisgroup/euroflood"
+_DOCS_URL = "https://cisgroup.github.io/euroflood/"
+
+
+def build_software_metadata(version: str) -> dict[str, Any]:
+    """Zenodo record metadata for the euroflood **library** (MIT).
+
+    Deliberately separate from `build_zenodo_metadata`, which describes the index
+    *dataset*: that one is ``upload_type: dataset`` under CC-BY-4.0 and attributes JRC,
+    none of which is true of the software. Conflating them is the mistake this split
+    exists to prevent.
+
+    Args:
+        version: The released library version (e.g. ``"0.3.0"``).
+
+    Returns:
+        Zenodo deposition metadata.
+    """
+    return {
+        "title": (
+            "EuroFlood: query Europe's satellite flood-depth maps by place and time"
+        ),
+        "upload_type": "software",
+        "description": (
+            "<p>EuroFlood is a lightweight, cloud-native Python library that turns the "
+            "JRC / Copernicus <em>CEMS-EFAS Satellite-Derived Flood Depth Maps for "
+            "Europe</em> into a queryable index: discover which flood events touched a "
+            "region (and when), then download only the depth rasters you need. It "
+            "follows a <strong>Discover &rarr; Extract</strong> model, streaming a "
+            "compact index over HTTP range reads rather than the multi-gigabyte source "
+            "archive.</p><p>This record archives the released source distribution and "
+            "wheel, byte-identical to the artifacts published on PyPI "
+            "(<code>pip install euroflood</code>). The flood index the library reads is "
+            "archived separately under its own DOI.</p>"
+        ),
+        "creators": [
+            {
+                "name": "Hackl, Jürgen",
+                "affiliation": "Princeton University",
+                "orcid": _ORCID,
+            }
+        ],
+        "access_right": "open",
+        "license": "mit",
+        "version": version,
+        "keywords": [
+            "flood",
+            "flood depth",
+            "CEMS-EFAS",
+            "GLOFAS",
+            "Copernicus",
+            "Sentinel-1",
+            "geospatial",
+            "remote sensing",
+            "Python",
+        ],
+        "related_identifiers": [
+            {
+                "relation": "isSupplementedBy",
+                "identifier": INDEX_CONCEPT_DOI,
+                "resource_type": "dataset",
+            },
+            {
+                "relation": "isDocumentedBy",
+                "identifier": _DOCS_URL,
+                "resource_type": "publication-softwaredocumentation",
+            },
+            {
+                "relation": "isSupplementTo",
+                "identifier": _REPO_URL,
+                "resource_type": "software",
+            },
+        ],
+    }
+
+
 def build_zenodo_metadata(version: str) -> dict[str, Any]:
     """Zenodo record metadata for the EuroFlood index (CC-BY-4.0; attributes JRC)."""
     return {
@@ -157,6 +235,97 @@ def gather_bundle_files(settings: Settings) -> list[Path]:
         if path.exists() and path not in files:
             files.append(path)
     return files
+
+
+def publish_software_to_zenodo(
+    files: list[Path],
+    *,
+    version: str,
+    sandbox: bool = False,
+    concept_recid: int | None = None,
+    draft_id: int | None = None,
+    dry_run: bool = False,
+    dotenv: Path = Path(".env"),
+) -> dict[str, Any]:
+    """Archive the released library artifacts on Zenodo.
+
+    Deliberately shares nothing with `publish_to_zenodo` beyond the token convention.
+    That function is wired to the index bundle: it validates and *stamps the index
+    manifest*, and stamping a software DOI there would leak into the dataset product
+    card and corrupt the index's provenance. This path never touches `Settings` or any
+    manifest.
+
+    Exactly one of ``draft_id`` or ``concept_recid`` must be given:
+
+    - ``draft_id`` publishes a **reserved, unpublished draft**, honouring its
+      pre-reserved DOI. Use it for a record's first release.
+    - ``concept_recid`` resolves the concept record to its latest published version and
+      adds a new version to it. Use it for every release after the first.
+
+    Creating a brand-new record is intentionally not offered: it would mint a fresh
+    concept DOI and silently orphan the existing one.
+
+    Args:
+        files: Artifacts to attach (the sdist and wheel that went to PyPI).
+        version: The released library version.
+        sandbox: Publish to sandbox.zenodo.org instead of the real thing.
+        concept_recid: Concept record id, for releases after the first.
+        draft_id: Reserved draft id, for the first release.
+        dry_run: Validate and report the plan; upload nothing.
+        dotenv: A ``.env`` to load credentials from.
+
+    Returns:
+        ``{doi, concept_doi, record_url, deposition_id}``, or a dry-run plan.
+
+    Raises:
+        ValueError: If the target is ambiguous or unspecified, or a file is missing.
+        RuntimeError: If the required token is not set.
+    """
+    if (draft_id is None) == (concept_recid is None):
+        raise ValueError(
+            "give exactly one of draft_id (first release) or concept_recid"
+        )
+    missing = [str(f) for f in files if not f.is_file()]
+    if missing:
+        raise ValueError(f"artifact(s) not found: {', '.join(missing)}")
+
+    load_dotenv(dotenv)
+    env_key = "ZENODO_SANDBOX_TOKEN" if sandbox else "ZENODO_TOKEN"
+    metadata = build_software_metadata(version)
+    mode = "reserved-draft" if draft_id else "new-version"
+
+    if dry_run:  # read-only: report the plan, upload nothing
+        return {
+            "dry_run": True,
+            "version": version,
+            "target": "sandbox" if sandbox else "production",
+            "token_env": env_key,
+            "mode": mode,
+            "draft_id": draft_id,
+            "concept_recid": concept_recid,
+            "files": [f.name for f in files],
+        }
+
+    token = os.environ.get(env_key)
+    if not token:
+        raise RuntimeError(f"{env_key} is not set (add it to .env or the environment).")
+    publisher = ZenodoPublisher(token, sandbox=sandbox)
+    if draft_id is not None:
+        result = publisher.publish_reserved_draft(draft_id, files, metadata)
+    else:
+        # narrowed by the exactly-one guard at the top of this function
+        assert concept_recid is not None
+        latest = publisher.latest_version_id(concept_recid)
+        result = publisher.publish_new_version(latest, files, metadata)
+    logger.info(
+        "zenodo_software_published",
+        version=version,
+        doi=result["doi"],
+        concept_doi=result["concept_doi"],
+        mode=mode,
+        files=len(files),
+    )
+    return result
 
 
 def publish_to_zenodo(

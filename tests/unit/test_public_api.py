@@ -27,6 +27,7 @@ def test_headline_functions_present():
         "hazard",
         "download",
         "mirror",
+        "nuts",
         "verify",
         "offline",
         "setup_logging",
@@ -62,3 +63,14 @@ def test_every_setting_has_a_description():
 
     missing = [n for n, f in Settings.model_fields.items() if not f.description]
     assert not missing, f"Settings fields missing a description: {missing}"
+
+
+@pytest.mark.parametrize("name", ["crs", "nuts"])
+def test_roi_functions_share_the_region_parameters(name):
+    """floods/hazard/mirror/verify all take keyword-only `crs`/`nuts` defaulting to None."""
+    import inspect
+
+    for fn in (ef.floods, ef.hazard, ef.mirror, ef.verify):
+        param = inspect.signature(fn).parameters[name]
+        assert param.kind is inspect.Parameter.KEYWORD_ONLY, fn.__name__
+        assert param.default is None, fn.__name__

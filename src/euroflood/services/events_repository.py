@@ -15,8 +15,8 @@ from typing import Any
 from ..config import Settings, get_settings
 from ._duckdb import connection
 
-# The fields the discovery consumer expects per event (mirrors the old embedded
-# ``events`` struct so row assembly is unchanged).
+# The fields the discovery consumer expects per event (the shape of the ``events``
+# struct a legacy JSON dictionary embeds, so row assembly is shared).
 _EVENT_FIELDS = (
     "start_date",
     "end_date",
@@ -42,8 +42,8 @@ class EventsRepository:
     def lookup_events(self, global_ids: list[int]) -> dict[int, dict[str, Any]]:
         """Return ``{global_id: {metadata…}}`` for the given ids (present ones only).
 
-        Reads only the matching rows. Missing table / ids resolve to ``{}`` /
-        omission rather than raising, matching the old "skip unresolved" behaviour.
+        Reads only the matching rows. A missing table or id resolves to ``{}`` /
+        omission rather than raising, so unresolved events are skipped.
         """
         ids = [int(g) for g in global_ids]
         if not ids or not self.available:

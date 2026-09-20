@@ -19,6 +19,7 @@ Notes:
 import os
 from functools import lru_cache
 from pathlib import Path
+from typing import Literal
 
 import platformdirs
 from pydantic import Field
@@ -133,6 +134,32 @@ class Settings(BaseSettings):
         default=True,
         description="Cache resolved place-name geometries on disk "
         "(cache_dir/geocode/) so a repeat query skips the Nominatim round-trip.",
+    )
+
+    # --- Eurostat NUTS regions (identifier -> boundary) ---
+    nuts_year: int = Field(
+        default=2024,
+        description="NUTS classification version used for nuts= regions and "
+        "euroflood.nuts(): 2024 (default), 2021, 2016, ... Identifiers are recoded "
+        "between versions.",
+    )
+    nuts_scale: Literal["01M", "03M", "10M", "20M", "60M"] = Field(
+        default="01M",
+        description="Generalisation scale of the Eurostat GISCO NUTS boundary files: "
+        "'01M' (1:1 million, the most detailed; default), '03M', '10M', '20M' or "
+        "'60M'. Coarser scales download faster but misplace boundaries by kilometres.",
+    )
+    nuts_base_url: str = Field(
+        default="https://gisco-services.ec.europa.eu/distribution/v2/nuts/",
+        description="Base URL of the Eurostat GISCO NUTS distribution (its geojson/ "
+        "and csv/ folders). Per-level boundary files and the attribute table are "
+        "downloaded from here on first use into cache_dir/boundaries/.",
+    )
+    nuts_dataset_path: Path | None = Field(
+        default=None,
+        description="Override: one local NUTS boundary file holding every level (a "
+        "GISCO NUTS_RG_*.geojson). Serves nuts= lookups and euroflood.nuts() with no "
+        "download (offline nodes, tests).",
     )
     show_progress: bool = Field(
         default=True,

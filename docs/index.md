@@ -58,11 +58,10 @@ Zero configuration: the published index is read remotely and cached on first use
 
 ## See it across Europe
 
-![A decade of observed flood recurrence across Europe (2015–2024), computed entirely from the index.](images/paper/fig-recurrence.png){ width="820" .center }
+![Observed flood recurrence across Europe (2015–2025), computed entirely from the index.](images/paper/fig-recurrence.png){ width="820" .center }
 
-Every place the archive had seen flooded over 2015–2024: **376,857 km²** in all, computed
-entirely from the index without downloading a single depth raster. (This figure and the
-map above cover the 2015–2024 decade; the index now reaches 2025.) Then zoom into
+Every place the archive has seen flooded over 2015–2025: **412,138 km²** in all, computed
+entirely from the index without downloading a single depth raster. Then zoom into
 any of it: the [case studies](case-studies/README.md) work through real events, from
 Storm Boris to the Valencia DANA.
 

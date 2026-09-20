@@ -30,6 +30,7 @@ Example:
 """
 
 import json
+from collections import Counter
 from concurrent.futures import ProcessPoolExecutor, ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any
@@ -45,6 +46,20 @@ from ..services.scraper import ScraperService
 from .ledger import StateLedger
 
 logger = structlog.get_logger(__name__)
+
+# How each `ProcessOutcome.status` is recorded in the resumable ledger.
+#
+# `cached` is a *success*: the parquet is on disk and its cells are in the index.
+# `missing_file` and `missing_crs` are failures, so they land in the dead-letter
+# report and a later run retries them instead of treating them as done.
+_PROCESS_LEDGER_STATUS = {
+    "complete": "complete",
+    "cached": "complete",
+    "empty": "empty",
+    "missing_file": "failed",
+    "missing_crs": "failed",
+}
+_SKIPPED_STATUSES = ("missing_file", "missing_crs")
 
 
 def _filter_key(year: int | None, month: str | None) -> str:
@@ -213,11 +228,25 @@ class IngestionPipeline:
         if len(pending) < len(df):
             logger.info("resume_skip", already_done=len(df) - len(pending))
         if pending.empty:
-            logger.info("nothing_to_do")
+            # Report the same shape as a real run, so a fully-resumed invocation is
+            # as readable as a fresh one.
+            logger.info(
+                "pipeline_completed",
+                considered=len(df),
+                skipped_already_done=len(df),
+                ingested=0,
+                cached=0,
+                empty=0,
+                download_failed=0,
+                process_failed=0,
+                process_skipped=0,
+                total_points=0,
+            )
             return
 
         # 1. Download Phase -> list of (local_path, global_id, year)
         downloaded_files: list[tuple[str, int, str]] = []
+        download_failed = 0
         with ThreadPoolExecutor(max_workers=self.settings.max_workers_dl) as io_pool:
             futures = {
                 io_pool.submit(
@@ -239,6 +268,7 @@ class IngestionPipeline:
                             download_status="failed",
                             last_error=str(e),
                         )
+                        download_failed += 1
                         continue
                     if result_path:
                         ledger.record(
@@ -252,10 +282,13 @@ class IngestionPipeline:
                             download_status="failed",
                             last_error="download returned no file",
                         )
+                        download_failed += 1
 
         # 2. Processing Phase. Futures are mapped to their global_id so a failure
         #    is attributable to a specific file (and recorded in the ledger).
         total_points = 0
+        process_failed = 0
+        outcomes: Counter[str] = Counter()
         with ProcessPoolExecutor(max_workers=self.settings.max_workers_cpu) as cpu_pool:
             futures_proc = {
                 cpu_pool.submit(self.processor.process, Path(p), gid, y): gid
@@ -267,18 +300,23 @@ class IngestionPipeline:
                     step(1)
                     gid = futures_proc[proc_fut]
                     try:
-                        points = proc_fut.result()
+                        outcome = proc_fut.result()
                     except Exception as e:
                         # One bad file must not crash a multi-hour run; record + skip.
                         logger.error("process_job_error", global_id=gid, error=str(e))
                         ledger.record(gid, process_status="failed", last_error=str(e))
+                        process_failed += 1
                         continue
-                    total_points += points
-                    ledger.record(
-                        gid,
-                        process_status="empty" if points == 0 else "complete",
-                        points=points,
-                    )
+                    total_points += outcome.points
+                    outcomes[outcome.status] += 1
+                    status = _PROCESS_LEDGER_STATUS[outcome.status]
+                    fields: dict[str, Any] = {
+                        "process_status": status,
+                        "points": outcome.points,
+                    }
+                    if status == "failed":
+                        fields["last_error"] = outcome.status
+                    ledger.record(gid, **fields)
 
         # 3. Dead-letter report of any non-success files.
         failures = ledger.failures()
@@ -291,8 +329,19 @@ class IngestionPipeline:
             report.write_text(json.dumps(failures, indent=2))
             logger.warning("ingest_failures", count=len(failures), report=str(report))
 
+        # Every file in scope is accounted for exactly once:
+        #   considered = skipped_already_done + ingested + cached + empty
+        #                + download_failed + process_failed + process_skipped
+        # `cached` (already in the index) and `empty` (no wet pixels) stay distinct.
         logger.info(
             "pipeline_completed",
+            considered=len(df),
+            skipped_already_done=len(df) - len(pending),
+            ingested=outcomes["complete"],
+            cached=outcomes["cached"],
+            empty=outcomes["empty"],
+            download_failed=download_failed,
+            process_failed=process_failed,
+            process_skipped=sum(outcomes[s] for s in _SKIPPED_STATUSES),
             total_points=total_points,
-            processed=len(downloaded_files),
         )

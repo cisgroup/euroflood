@@ -13,7 +13,7 @@ import contextlib
 import json
 import math
 import shutil
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 from typing import Any, ClassVar
@@ -465,7 +465,9 @@ class DiscoveryPipeline:
         radius_m: float = 0.0,
         bbox: tuple[float, float, float, float] | None = None,
         shapefile: str | Path | None = None,
+        nuts: str | Sequence[str] | None = None,
         buffer_m: float = 0.0,
+        crs: Any = None,
         year: int | None = None,
         start: str | int | None = None,
         end: str | int | None = None,
@@ -494,7 +496,9 @@ class DiscoveryPipeline:
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             level=level,
             shape=shape,
         )
@@ -825,7 +829,9 @@ def mirror_floods(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     year: int | None = None,
     start: str | int | None = None,
     end: str | int | None = None,
@@ -852,7 +858,9 @@ def mirror_floods(
         "radius_m": radius_m,
         "bbox": bbox,
         "shapefile": shapefile,
+        "nuts": nuts,
         "buffer_m": buffer_m,
+        "crs": crs,
         "year": year,
         "start": start,
         "end": end,
@@ -952,7 +960,9 @@ def verify_floods_mirror(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     year: int | None = None,
     start: str | int | None = None,
     end: str | int | None = None,
@@ -968,7 +978,9 @@ def verify_floods_mirror(
         "radius_m": radius_m,
         "bbox": bbox,
         "shapefile": shapefile,
+        "nuts": nuts,
         "buffer_m": buffer_m,
+        "crs": crs,
         "year": year,
         "start": start,
         "end": end,

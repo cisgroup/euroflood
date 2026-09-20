@@ -66,7 +66,6 @@ class ScraperService:
         self.settings = settings or get_settings()
         self.base_url: str = self.settings.base_url
         self.session: requests.Session = requests.Session()
-        # Compile Regex once for performance
         # Matches files like: WD_MERGE_2020-02-15---2020-02-24_..._cluster_123.tif
         self.file_pattern = re.compile(
             r"WD_MERGE_(?P<start_date>\d{4}-\d{2}-\d{2})---(?P<end_date>\d{4}-\d{2}-\d{2}).*?_cluster_(?P<cluster_id>\d+).*?\.tif$"

@@ -12,9 +12,6 @@ Resolves place names (countries, regions, cities) to shapely geometries in WGS84
   Downloaded on first use into ``cache_dir/boundaries/``. Falls back to Nominatim
   on a miss only when ``settings.allow_remote_geocoding`` is set.
 - ``nominatim``: a Nominatim query only, with no local fallback.
-
-This replaces the previous heavy/slow OSMnx dependency: EuroFlood only needs
-administrative-area polygons, not street networks.
 """
 
 from __future__ import annotations
@@ -44,9 +41,9 @@ _NAME_COLUMNS = ("NAME_LATN", "NUTS_NAME", "NAME", "name")
 # Common exonyms -> the endonym the NUTS dataset actually stores (both normalized).
 # Only the query side needs these: bilingual names ("Valencia/València") and
 # suffixed ones ("München, Kreisfreie Stadt") are already resolved from the data by
-# the variant index. Each endonym here is a real NUTS variant (a test guards the
-# ones present in the committed fixture); no lightweight exonym library exists
-# (pycountry/Babel cover country names only), so this small map is hand-curated.
+# the variant index. Each endonym here is a real NUTS variant; no lightweight
+# exonym library exists (pycountry/Babel cover country names only), so this small
+# map is hand-curated.
 _EXONYMS = {
     # country endonyms
     "germany": "deutschland",

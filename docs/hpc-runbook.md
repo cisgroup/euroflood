@@ -121,7 +121,14 @@ parallelise across regions, give each a distinct `EUROFLOOD_CACHE_DIR` and merge
 
 `ingest` is resumable and ledger-tracked: it skips already-processed files
 (`process_status` in {complete, empty}) and writes a `failed_*.json` dead-letter for
-the rest, so re-submitting safely resumes. On Della the whole archive processes on a
+the rest, so re-submitting safely resumes. A file whose Parquet is already on disk is
+recorded `complete` with its real point count -- not `empty` -- so the ledger sums to
+the index no matter how many runs the build took; a tile that could not be read at all
+(absent, or with no CRS to place it by) is recorded `failed`, so it reaches the
+dead-letter report and is retried rather than being mistaken for an empty raster.
+Each run ends with a `pipeline_completed` line whose buckets (`skipped_already_done`,
+`ingested`, `cached`, `empty`, `download_failed`, `process_failed`, `process_skipped`)
+sum to `considered`. On Della the whole archive processes on a
 **single node in ~6 min** (a 32-worker process pool), so the single-node job is the
 proven path:
 

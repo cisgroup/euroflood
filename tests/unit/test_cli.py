@@ -3,14 +3,17 @@
 from pathlib import Path
 
 import geopandas as gpd
+import pandas as pd
 from click.testing import CliRunner
 from shapely.geometry import box
 
 from euroflood.cli import cli
 from euroflood.exceptions import (
     CacheSchemaError,
+    CRSError,
     GeocodingError,
     HazardError,
+    NutsError,
     ProcessingError,
 )
 
@@ -26,6 +29,41 @@ def _sample_catalogue():
         },
         geometry="geometry",
         crs="EPSG:4326",
+    )
+
+
+def _roi(place=None, **overrides):
+    """The region kwargs a consumer command forwards to the API (defaults + overrides)."""
+    kw = {
+        "region": place,
+        "bbox": None,
+        "point": None,
+        "radius_m": 0.0,
+        "shapefile": None,
+        "buffer_m": 0.0,
+        "shape": "exact",
+        "crs": None,
+        "nuts": None,
+    }
+    kw.update(overrides)
+    return kw
+
+
+def _sample_regions(geometry=False):
+    """Two NUTS rows as euroflood.nuts() returns them (optionally with polygons)."""
+    frame = pd.DataFrame(
+        {
+            "NUTS_ID": ["NL22", "NL224"],
+            "LEVL_CODE": [2, 3],
+            "CNTR_CODE": ["NL", "NL"],
+            "NAME_LATN": ["Gelderland", "Zuidwest-Gelderland"],
+            "NUTS_NAME": ["Gelderland", "Zuidwest-Gelderland"],
+        }
+    )
+    if not geometry:
+        return frame
+    return gpd.GeoDataFrame(
+        frame, geometry=[box(5, 51, 7, 52), box(5, 51, 6, 51.5)], crs="EPSG:4326"
     )
 
 
@@ -280,9 +318,7 @@ def test_cli_hazard_command(mocker):
     assert result.exit_code == 0
     assert "1 hazard layer" in result.output
     assert "hazard_RP100.tif" in result.output
-    mock_hz.assert_called_once_with(
-        "Cologne", return_period=[100], buffer_m=0.0, shape="exact"
-    )
+    mock_hz.assert_called_once_with(return_period=[100], **_roi("Cologne"))
 
 
 def test_cli_hazard_multi_rp(mocker):
@@ -294,9 +330,7 @@ def test_cli_hazard_multi_rp(mocker):
     result = CliRunner().invoke(cli, ["hazard", "Cologne", "-r", "100", "-r", "500"])
 
     assert result.exit_code == 0
-    mock_hz.assert_called_once_with(
-        "Cologne", return_period=[100, 500], buffer_m=0.0, shape="exact"
-    )
+    mock_hz.assert_called_once_with(return_period=[100, 500], **_roi("Cologne"))
 
 
 def test_cli_shape_flag_forwarded(mocker):
@@ -866,3 +900,217 @@ def test_cli_publish_zenodo_passes_record_id_through(mocker):
     )
     assert result.exit_code == 0
     assert spy.call_args.kwargs["record_id"] == 21284460
+
+
+# --- region options: --bbox/--point/--shapefile/--crs on every query command ---
+RD_BOX_ARGS = ["--bbox", "200000", "455000", "220000", "475000", "--crs", "EPSG:28992"]
+
+
+def test_cli_floods_accepts_region_options(mocker):
+    """floods takes --bbox + --crs instead of PLACE and forwards them verbatim."""
+    m = mocker.patch("euroflood.cli.api_floods", return_value=_sample_catalogue())
+    result = CliRunner().invoke(cli, ["floods", *RD_BOX_ARGS, "--year", "2020"])
+    assert result.exit_code == 0, result.output
+    assert "1 flood event" in result.output
+    m.assert_called_once_with(
+        year=2020,
+        start=None,
+        end=None,
+        **_roi(bbox=(200000.0, 455000.0, 220000.0, 475000.0), crs="EPSG:28992"),
+    )
+
+
+def test_cli_download_accepts_region_options(mocker):
+    mocker.patch("euroflood.cli.api_floods", return_value=_sample_catalogue())
+    mocker.patch("euroflood.cli.api_download", return_value=[Path("a.tif")])
+    result = CliRunner().invoke(cli, ["download", *RD_BOX_ARGS, "--out", "out"])
+    assert result.exit_code == 0, result.output
+    assert "Downloaded 1" in result.output
+
+
+def test_cli_hazard_point_radius_crs(mocker):
+    """hazard --point X Y --radius --crs reaches the API as (x, y) metres + crs."""
+    m = mocker.patch(
+        "euroflood.cli.api_hazard", return_value=_sample_hazard_catalogue()
+    )
+    args = ["hazard", "--point", "210000", "465000", "--radius", "5000"]
+    result = CliRunner().invoke(cli, [*args, "--crs", "EPSG:28992", "-r", "100"])
+    assert result.exit_code == 0, result.output
+    m.assert_called_once_with(
+        return_period=[100],
+        **_roi(point=(210000.0, 465000.0), radius_m=5000.0, crs="EPSG:28992"),
+    )
+
+
+def test_cli_crs_defaults_to_none(mocker):
+    m = mocker.patch("euroflood.cli.api_floods", return_value=_sample_catalogue())
+    assert CliRunner().invoke(cli, ["floods", "Cologne"]).exit_code == 0
+    assert m.call_args.kwargs["crs"] is None
+    assert m.call_args.kwargs["region"] == "Cologne"
+
+
+def test_cli_crs_flag_forwarded_on_mirror_and_verify(mocker):
+    from euroflood.services.mirror_ledger import MirrorReport, MirrorResult
+
+    m = mocker.patch(
+        "euroflood.cli.api_mirror", return_value=MirrorResult(1, n_expected=1)
+    )
+    result = CliRunner().invoke(cli, ["mirror", "hazard", *RD_BOX_ARGS, "-r", "100"])
+    assert result.exit_code == 0, result.output
+    assert m.call_args.kwargs["crs"] == "EPSG:28992"
+    assert m.call_args.kwargs["bbox"] == (200000.0, 455000.0, 220000.0, 475000.0)
+
+    v = mocker.patch(
+        "euroflood.cli.api_verify",
+        return_value=MirrorReport(collection="floods", present=["a"], n_expected=1),
+    )
+    args = ["verify", "floods", "--point", "210000", "465000", "--radius", "5000"]
+    result = CliRunner().invoke(cli, [*args, "--crs", "EPSG:28992"])
+    assert result.exit_code == 0, result.output
+    assert v.call_args.kwargs["crs"] == "EPSG:28992"
+    assert v.call_args.kwargs["point"] == (210000.0, 465000.0)
+
+
+def test_cli_query_without_a_region_is_a_usage_error(mocker):
+    """floods/download/hazard need PLACE or one region option (click exit 2)."""
+    api = mocker.patch("euroflood.cli.api_floods")
+    result = CliRunner().invoke(cli, ["floods"])
+    assert result.exit_code == 2
+    assert "Provide exactly one region" in result.output
+    api.assert_not_called()
+    result = CliRunner().invoke(cli, ["hazard", "-r", "100"])
+    assert result.exit_code == 2
+
+
+def test_cli_two_regions_is_a_usage_error(mocker):
+    api = mocker.patch("euroflood.cli.api_floods")
+    result = CliRunner().invoke(
+        cli, ["floods", "Cologne", "--bbox", "1", "2", "3", "4"]
+    )
+    assert result.exit_code == 2
+    assert "Provide exactly one region" in result.output
+    api.assert_not_called()
+
+
+def test_cli_crs_error_exit_code_and_hint(mocker):
+    """A CRSError exits 4 (a GeocodingError) with the CRS hint, not the place-name one."""
+    mocker.patch(
+        "euroflood.cli.api_floods",
+        side_effect=CRSError("Unrecognised crs 'nonsense': Invalid projection"),
+    )
+    result = CliRunner().invoke(
+        cli, ["floods", "--bbox", "1", "2", "3", "4", "--crs", "nonsense"]
+    )
+    assert result.exit_code == 4
+    assert "Unrecognised crs" in result.output
+    assert "--crs EPSG:28992" in result.output  # the CRS next-step hint
+    assert "Try a more specific name" not in result.output
+    assert "Traceback" not in result.output
+
+
+# --- NUTS regions: --nuts on the region commands and the `nuts` command ----------
+def test_cli_nuts_flag_forwarded_and_unioned(mocker):
+    m = mocker.patch("euroflood.cli.api_floods", return_value=_sample_catalogue())
+    assert CliRunner().invoke(cli, ["floods", "--nuts", "NL22"]).exit_code == 0
+    m.assert_called_once_with(year=None, start=None, end=None, **_roi(nuts=["NL22"]))
+    CliRunner().invoke(cli, ["floods", "--nuts", "NL22", "--nuts", "nl21"])
+    assert m.call_args.kwargs["nuts"] == ["NL22", "nl21"]  # repeated -> a union
+
+
+def test_cli_nuts_flag_on_mirror_and_verify(mocker):
+    from euroflood.services.mirror_ledger import MirrorReport, MirrorResult
+
+    m = mocker.patch(
+        "euroflood.cli.api_mirror", return_value=MirrorResult(1, n_expected=1)
+    )
+    result = CliRunner().invoke(
+        cli, ["mirror", "hazard", "--nuts", "NL22", "-r", "100"]
+    )
+    assert result.exit_code == 0, result.output
+    assert m.call_args.kwargs["nuts"] == ["NL22"]
+    v = mocker.patch(
+        "euroflood.cli.api_verify",
+        return_value=MirrorReport(collection="floods", present=["a"], n_expected=1),
+    )
+    assert (
+        CliRunner().invoke(cli, ["verify", "floods", "--nuts", "NL22"]).exit_code == 0
+    )
+    assert v.call_args.kwargs["nuts"] == ["NL22"]
+
+
+def test_cli_nuts_and_place_together_is_a_usage_error(mocker):
+    api = mocker.patch("euroflood.cli.api_floods")
+    result = CliRunner().invoke(cli, ["floods", "Cologne", "--nuts", "NL22"])
+    assert result.exit_code == 2 and "Provide exactly one region" in result.output
+    api.assert_not_called()
+
+
+def test_cli_nuts_command_searches_by_name(mocker):
+    m = mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions())
+    result = CliRunner().invoke(cli, ["nuts", "Gelderland"])
+    assert result.exit_code == 0, result.output
+    assert "2 NUTS region(s) for 'Gelderland'" in result.output
+    assert "NL22" in result.output and "Zuidwest-Gelderland" in result.output
+    m.assert_called_once_with("Gelderland", level=None, country=None, geometry=False)
+
+
+def test_cli_nuts_command_lists_by_country_and_level(mocker):
+    m = mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions())
+    result = CliRunner().invoke(cli, ["nuts", "--country", "NL", "--level", "2"])
+    assert result.exit_code == 0, result.output
+    m.assert_called_once_with(None, level=2, country="NL", geometry=False)
+    assert CliRunner().invoke(cli, ["nuts", "--level", "7"]).exit_code == 2  # 0..3 only
+
+
+def test_cli_nuts_command_json_mode(mocker):
+    import json
+
+    mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions(geometry=True))
+    result = CliRunner().invoke(cli, ["--json", "nuts", "Gelderland"])
+    assert result.exit_code == 0, result.output
+    records = json.loads(result.output)
+    assert [r["NUTS_ID"] for r in records] == ["NL22", "NL224"]
+    assert "geometry" not in records[0]
+
+
+def test_cli_nuts_command_writes_csv_and_geojson(mocker, tmp_path):
+    m = mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions())
+    out = tmp_path / "regions.csv"
+    result = CliRunner().invoke(cli, ["nuts", "--country", "NL", "-o", str(out)])
+    assert result.exit_code == 0, result.output
+    assert out.exists() and "Wrote 2 region(s)" in result.output
+    assert m.call_args.kwargs["geometry"] is False
+
+    m = mocker.patch(
+        "euroflood.cli.api_nuts", return_value=_sample_regions(geometry=True)
+    )
+    geo = tmp_path / "regions.geojson"
+    result = CliRunner().invoke(cli, ["nuts", "Gelderland", "-o", str(geo)])
+    assert result.exit_code == 0, result.output
+    assert geo.exists()
+    assert m.call_args.kwargs["geometry"] is True  # GeoJSON implies --geometry
+
+
+def test_cli_nuts_command_geometry_flag(mocker):
+    m = mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions(True))
+    assert CliRunner().invoke(cli, ["nuts", "NL2", "--geometry"]).exit_code == 0
+    assert m.call_args.kwargs["geometry"] is True
+
+
+def test_cli_nuts_command_no_match(mocker):
+    mocker.patch("euroflood.cli.api_nuts", return_value=_sample_regions().iloc[0:0])
+    result = CliRunner().invoke(cli, ["nuts", "Atlantis"])
+    assert result.exit_code == 0 and "0 NUTS region(s)" in result.output
+
+
+def test_cli_nuts_error_exit_code_and_hint(mocker):
+    """A NutsError exits 4 with the NUTS hint, not the place-name geocoding hint."""
+    mocker.patch(
+        "euroflood.cli.api_floods",
+        side_effect=NutsError("Unknown NUTS identifier 'NL29' in the NUTS 2024 ..."),
+    )
+    result = CliRunner().invoke(cli, ["floods", "--nuts", "NL29"])
+    assert result.exit_code == 4
+    assert "Unknown NUTS identifier" in result.output
+    assert "euroflood nuts" in result.output
+    assert "Try a more specific name" not in result.output

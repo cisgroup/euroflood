@@ -69,10 +69,13 @@ def _reset_service_caches():
     """
     from euroflood.services._duckdb import close_cached_connections
     from euroflood.services.geocoding import _load_nuts
+    from euroflood.services.nuts import _load_attributes, _load_regions
 
     yield
     close_cached_connections()
     _load_nuts.cache_clear()
+    _load_regions.cache_clear()
+    _load_attributes.cache_clear()
 
 
 @pytest.fixture(autouse=True)
@@ -104,6 +107,11 @@ def mock_settings(tmp_path):
     settings.boundary_dataset_path = None
     settings.allow_remote_geocoding = False
     settings.geocode_cache = True
+
+    # Reset the NUTS-region settings (tests point nuts_dataset_path at fixtures).
+    settings.nuts_year = 2024
+    settings.nuts_scale = "01M"
+    settings.nuts_dataset_path = None
 
     # Reset the progress toggle (tests may disable it on the singleton).
     settings.show_progress = True

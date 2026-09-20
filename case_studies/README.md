@@ -47,9 +47,9 @@ and are honest about what satellite detection can and cannot see.
 
     __[A decade of European flood recurrence](06_continental_recurrence.ipynb)__
 
-    How often each place in Europe was detected flooded (2015–2024), from a single index
+    How often each place in Europe was detected flooded (2015–2025), from a single index
     query; the most repeatedly flooded cell is the Vouga/Aveiro floodplain in Portugal
-    (87 times).
+    (89 times).
 
 </div>
 

@@ -6,6 +6,45 @@ follow [Semantic Versioning](https://semver.org/) once it reaches a public relea
 
 ## [Unreleased]
 
+## [0.3.1] - 2026-09-20
+
+### Added
+- **Eurostat NUTS regions.** `floods()`, `hazard()`, `mirror()` and `verify()` accept NUTS
+  identifiers (`nuts="NL22"`, or a list for their union), with boundaries from the Eurostat
+  GISCO 1:1M files, fetched once per level and cached. `euroflood.nuts()` and `euroflood nuts`
+  find identifiers by name or list a country's regions by level. Settings: `nuts_year`,
+  `nuts_scale`, `nuts_base_url`, `nuts_dataset_path`.
+- **Coordinate reference systems.** `crs=` declares the CRS of `bbox`, `point` and bare
+  geometries (anything pyproj accepts). `bbox` is `(minx, miny, maxx, maxy)`; `point` is
+  `(lat, lon)` in a geographic CRS and `(x, y)` in a projected one. Vector files keep their own
+  CRS, and the catalogue stays EPSG:4326. Malformed or mismatched input raises `CRSError` or
+  `NutsError` (both `GeocodingError`s) with the fix spelled out.
+- **Region options on the command line.** `floods`, `download` and `hazard` accept `--nuts`,
+  `--bbox`, `--point`/`--radius`, `--shapefile`, `--buffer`, `--shape` and `--crs`; `PLACE` is
+  optional.
+- **Zenodo archive for the library.** Every release is archived after the PyPI publish under
+  the concept DOI `10.5281/zenodo.22837458`; `CITATION.cff` and the citation page list the
+  software and dataset DOIs. CI checks that `CITATION.cff` matches `pyproject.toml` and that
+  `uv.lock` is current.
+
+### Changed
+- `radius_m` and `buffer_m` are ground metres at every latitude: buffers are computed in the
+  local UTM zone with densified edges. Buffered ROI polygons, and with them their crop
+  filenames, change once; existing crops are re-cut from the cached sources, and mirrors staged
+  with `--radius`/`--buffer` are worth a `verify` and `mirror` pass.
+- Basemap presets use Esri World Gray Canvas and OpenStreetMap Mapnik and identify the library
+  to tile servers; `dark` inverts a light basemap.
+- The docs' paper figures and prose follow index v1.1.0 (2015-2025 coverage, HANZE audit of
+  397 records).
+- A vector file without a CRS is assumed WGS 84 with a `UserWarning`; lon/lat outside their
+  range without `crs=` raise `CRSError`.
+
+### Fixed
+- `ingest` accounts for every file it considered (`considered`, `ingested`, `cached`, `empty`,
+  download and processing failures), records cache hits with their stored point counts, and
+  retries missing or CRS-less files on a later run, so a resumed build's ledger sums to its
+  index.
+
 ## [0.3.0] - 2026-09-18
 
 ### Added

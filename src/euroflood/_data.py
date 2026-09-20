@@ -38,8 +38,8 @@ DEFAULT_INDEX_BASE_URL: str | None = (
 )
 
 # Statuses worth another attempt. The published host intermittently returns 5xx, and a
-# single hiccup must not kill a first query (it previously raised straight out of
-# ``ensure_tables``). Permanent client errors (404, 403, ...) are NOT retried.
+# single hiccup must not kill a first query. Permanent client errors (404, 403, ...)
+# are NOT retried.
 RETRYABLE_STATUS = frozenset({408, 425, 429, 500, 502, 503, 504})
 
 

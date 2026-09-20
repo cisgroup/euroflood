@@ -25,13 +25,6 @@
 # recurrence, download and measure depth, and retrieve modelled hazard, all in one place.
 
 # %% [markdown]
-# > **Outputs captured against index v1.0.0 (2015 to 2024).**
-# > The cells below are rendered from stored outputs and are not re-executed in CI.
-# > The published index now covers 2015 to 2025 (v1.1.0), so running this notebook live
-# > returns more events than the counts shown here. The analysis and its conclusions are
-# > unchanged.
-
-# %% [markdown]
 # ## The place
 #
 # **Zutphen** is a town on the river **IJssel** in the Netherlands. It is a useful test site

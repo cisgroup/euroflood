@@ -1,6 +1,6 @@
 [project]
 name = "euroflood"
-version = "0.3.0"
+version = "0.3.1"
 description = "Processing toolkit for European Satellite-Derived Flood Depth Maps (JRC/CEMS-EFAS): ingest, index, and extract flood data."
 authors = [
     {name = "Jürgen Hackl", email = "hackl@princeton.edu"}
@@ -55,6 +55,8 @@ viz = [
     "contextily>=1.6",
     "folium>=0.17",
     "branca>=0.7",
+    # The tile-provider registry both plotting paths resolve basemap presets against.
+    "xyzservices>=2024.4",
     # Lets rich render the download/mirror progress bar in Jupyter (no warning).
     "ipywidgets>=8",
 ]
@@ -178,6 +180,7 @@ module = [
     "matplotlib.*",
     "folium.*",
     "contextily.*",
+    "xyzservices.*",
     "branca.*",
     "boto3.*",
     "botocore.*",
@@ -194,8 +197,9 @@ extend_exclude = ["case_studies"]
 # These viz deps are loaded lazily via importlib (euroflood.viz._deps.require) or a
 # find_spec probe, so deptry's static scan can't see them:
 #   folium, contextily - imported by name only inside euroflood.viz.require(...)
+#   xyzservices        - same, for the basemap provider registry (viz/_basemaps.py)
 #   ipywidgets         - probed via importlib.util.find_spec in _progress.py
-DEP002 = ["folium", "contextily", "ipywidgets"]
+DEP002 = ["folium", "contextily", "ipywidgets", "xyzservices"]
 
 [tool.pytest.ini_options]
 minversion = "9.0"

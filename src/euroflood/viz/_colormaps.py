@@ -14,7 +14,6 @@ import numpy as np
 # NoData sentinels masked (made transparent) in every raster plot.
 NODATA_SENTINELS: tuple[float, ...] = (0.0, -9999.0)
 
-# Default colormaps.
 DEPTH_CMAP = "Blues"  # light -> dark = shallow -> deep water
 RECURRENCE_CMAP = "YlOrRd"  # light -> dark = few -> many recorded floods
 

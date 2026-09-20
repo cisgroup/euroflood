@@ -127,9 +127,9 @@ class DownloadService:
                     # With neither a Content-Length nor chunked framing, a premature
                     # connection close is indistinguishable from a complete body, so a
                     # truncated transfer cannot be detected here and is committed as if
-                    # whole. Surface it so the silent-truncation class of issue #25
-                    # cannot hide in the (rare) no-length-header path. JRC's Apache
-                    # sends Content-Length for tiles, so this does not fire for them.
+                    # whole. Surface it so a silent truncation cannot hide in the (rare)
+                    # no-length-header path. JRC's Apache sends Content-Length for
+                    # tiles, so this does not fire for them.
                     logger.warning(
                         "download_length_unverified",
                         file=local_path.name,

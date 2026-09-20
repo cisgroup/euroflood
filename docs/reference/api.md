@@ -19,6 +19,13 @@ The object these return is a [`FloodFrame`](floodframe.md).
       show_root_heading: true
       heading_level: 3
 
+## Find NUTS regions
+
+::: euroflood.api.nuts
+    options:
+      show_root_heading: true
+      heading_level: 3
+
 ## Download rasters
 
 ::: euroflood.api.download

@@ -44,7 +44,40 @@ cat
 ef.floods(bbox=(6.15, 52.10, 6.26, 52.17))  # bounding box (minx,miny,maxx,maxy) WGS84
 
 # %%
-ef.floods(point=(52.14, 6.20), radius_m=6000)  # a point (lat, lon) + a radius in metres
+ef.floods(point=(52.14, 6.20), radius_m=6000)  # a (lat, lon) point + radius in metres
+
+# %% [markdown]
+# ### Other coordinate systems with `crs=`
+#
+# Coordinates default to WGS 84 lon/lat. Working in a national or metric grid? Pass `crs=`
+# (anything pyproj accepts: an EPSG code, `"EPSG:28992"`, WKT) and give the coordinates in that
+# system. A `bbox` is always `(minx, miny, maxx, maxy)`; a `point` is `(x, y)` = (easting,
+# northing) in a projected CRS, and `(lat, lon)` in a geographic one. A shapefile keeps its own
+# CRS; `crs=` only fills in a missing one. The catalogue you get back is always EPSG:4326: call
+# `.to_crs()` on it for anything else.
+
+# %%
+ef.floods(bbox=(200000, 455000, 220000, 475000), crs="EPSG:28992")  # Dutch RD New
+
+# %%
+ef.floods(point=(308400, 5780300), radius_m=6000, crs="EPSG:32632")  # UTM 32N: (x, y)
+
+# %% [markdown]
+# ### Eurostat NUTS regions with `nuts=`
+#
+# If your statistics are organised by Eurostat's **NUTS** regions, select one by its identifier
+# and get exactly that administrative boundary (Eurostat GISCO, 1:1M). The identifier's length
+# gives the level: `NL` is the country, `NL2` a major region, `NL22` Gelderland, `NL225` a small
+# region. `ef.nuts()` finds identifiers by name, or lists a country's regions at a level:
+
+# %%
+ef.nuts("Gelderland")  # which identifier? -> NL22, plus NL224 Zuidwest-Gelderland
+
+# %%
+ef.floods(nuts="NL22")  # every flood in Gelderland
+
+# %%
+ef.nuts(country="NL", level=2)  # every Dutch NUTS-2 region (loop for per-region work)
 
 # %% [markdown]
 # ### Cleaner ROIs with `shape=`
@@ -66,6 +99,8 @@ box.plot()
 # ```python
 # ef.floods("Zutphen, Netherlands", buffer_m=1000)  # a place plus a 1 km buffer
 # ef.floods(shapefile="my_area.geojson")            # any vector file as the ROI
+# ef.floods(shapefile="my_area.shp", crs="EPSG:28992")  # declare a .shp's missing CRS
+# ef.hazard(nuts=["NL22", "NL21"], return_period=100)  # the union of two NUTS regions
 # ef.floods("Gelderland", level=2)                  # disambiguate by NUTS level (0=country … 3=province)
 # ```
 

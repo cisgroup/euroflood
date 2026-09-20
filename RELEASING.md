@@ -4,8 +4,15 @@ EuroFlood has **two independently versioned artifacts**:
 
 | Artifact | Version source | Published to | Automated? |
 |---|---|---|---|
-| **Library** (`euroflood` on PyPI) | `pyproject.toml` `version` | PyPI | Yes — on a `v*` git tag |
+| **Library** (`euroflood` on PyPI) | `pyproject.toml` `version` | PyPI **and Zenodo** | Yes — both, on a `v*` git tag |
 | **Index** (the data bundle) | `--version` at publish time | Source Cooperative (+ Zenodo DOI) | No — a deliberate local command |
+
+The library and the index carry **separate Zenodo DOIs** and must not be conflated:
+
+| | Concept DOI (always latest) |
+|---|---|
+| Software | `10.5281/zenodo.22837458` |
+| Index dataset | `10.5281/zenodo.21284459` |
 
 They are decoupled: a library release does not re-publish the index, and vice-versa. A
 released library pins the immutable index prefix it reads via `DEFAULT_INDEX_BASE_URL`
@@ -37,6 +44,19 @@ The mirror is a **snapshot**, not a fork: each release wipes-and-copies (one com
 no dev history), so direct commits to the public repo are overwritten next release — triage
 public PRs/issues and apply the fix upstream here.
 
+### The Zenodo leg
+
+`release.yml`'s `zenodo` job runs **after** the PyPI job and archives the *same* `dist/`
+artifacts, so PyPI and Zenodo hold byte-identical files and a DOI is never minted for a
+release that failed to reach PyPI. It calls
+`scripts/zenodo_software_release.py --concept-recid 22837458`, which resolves the concept
+record to the latest published version and adds a new one — the concept DOI keeps
+resolving to the newest release, so `CITATION.cff` never needs a per-release DOI edit.
+
+Nothing to do by hand. To rehearse, run the script locally with `--sandbox --dry-run`.
+
+A published Zenodo record **cannot be deleted**, which is why the job sits last.
+
 ### One-time setup (before the first release)
 - Create the **public repo** `github.com/cisgroup/euroflood` (empty — the mirror fills it) and
   make sure your SSH key can push to it. Turn on **GitHub Pages** (source: GitHub Actions).
@@ -45,6 +65,10 @@ public PRs/issues and apply the fix upstream here.
 - On PyPI, add a **trusted publisher**: repo `cisgroup/euroflood`, workflow
   `release.yml`, environment `pypi`.
 - Create a GitHub **environment** named `pypi` on the public repo (Settings → Environments).
+- Create a GitHub **environment** named `zenodo` on the public repo, holding a
+  `ZENODO_TOKEN` secret (Zenodo → Applications → Personal access tokens, scopes
+  `deposit:write` + `deposit:actions`). This is the project's **only** stored secret —
+  PyPI uses OIDC and needs none — so keep it environment-scoped rather than repo-wide.
 - Recommended: rehearse once against **TestPyPI** before the first real publish.
 
 ## Publish a new index version

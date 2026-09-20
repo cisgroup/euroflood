@@ -34,7 +34,6 @@ class GlobalGrid:
     ORIGIN_Y: float = 85.1  # Top-Left Latitude
     RESOLUTION: float = 1 / 1200.0
 
-    # Calculated constants
     WIDTH_DEG: float = 63.0 - (-46.8)
     HEIGHT_DEG: float = 85.1 - 27.0
     WIDTH_PX: int = round(WIDTH_DEG / RESOLUTION)

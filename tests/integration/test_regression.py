@@ -64,8 +64,9 @@ def test_golden_process_export_floods(mock_settings, mocker, tmp_path):
         ]
     )
 
-    n_points = RasterProcessor().process(src_tif, gid, "2020")
-    assert n_points == 3  # GOLDEN: 3 wet pixels -> 3 valid grid cells
+    outcome = RasterProcessor().process(src_tif, gid, "2020")
+    assert outcome.status == "complete"
+    assert outcome.points == 3  # GOLDEN: 3 wet pixels -> 3 valid grid cells
 
     parquet = (
         mock_settings.cache_dir

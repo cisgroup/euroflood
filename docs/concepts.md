@@ -89,10 +89,14 @@ when they occurred, and how often cells were inundated, using only the ~161 MB i
 **Extraction** then retrieves native-resolution depth rasters, but only for the events
 you selected. So a query resolves in two cheap steps, then an optional extract:
 
-1. **Resolve the region**: a place name (geocoded), bbox, point+radius, or
-   shapefile becomes an ROI polygon. `shape="bbox"`/`"hull"` optionally regularizes
-   it to a bounding rectangle / convex hull (handy when an admin boundary follows a
-   river), and `buffer_m` grows it.
+1. **Resolve the region**: a place name (geocoded), a Eurostat NUTS identifier
+   (`nuts="NL22"`, exact 1:1M boundaries), bbox, point+radius, or shapefile becomes an
+   ROI polygon in WGS 84 (EPSG:4326, the grid's CRS).
+   Coordinates in another system are declared with `crs=` and reprojected (a
+   projected bbox is densified first so its edges follow the true rectangle).
+   `shape="bbox"`/`"hull"` optionally regularizes it to a bounding rectangle /
+   convex hull (handy when an admin boundary follows a river), and `buffer_m` grows
+   it by ground metres, computed in the local UTM zone.
 2. **Discover**: mask the index COG to the ROI (reading only that window), collect
    the distinct `combo_id`s, expand them to `flood_ids` via the dictionary, and join
    the events table for metadata. The result is a `FloodFrame`, one row per event.
@@ -148,7 +152,7 @@ See **[Tutorial 3: Visualize](tutorials/03_visualize.ipynb)** for the full galle
 ## How complete, and how trustworthy
 
 The index reconstructs the archive's event footprints **exactly** at its ~90 m grid:
-across 100 events sampled from the 2015–2024 decade, footprints decoded from the
+across 110 events sampled from the 2015–2025 record, footprints decoded from the
 published index match an independent re-ingest of the source rasters with an
 **IoU of 1.000**: no missing or spurious cells, no missing or spurious events.
 Queries also return **byte-identical** results whether streamed from the public
@@ -159,14 +163,15 @@ recurrence for the whole Netherlands, for example, is a **15.2 MB** windowed rea
 index versus **3.9 GB** of source rasters, a **254×** reduction; marginal queries
 transfer just 0.12–0.91 MB.
 
-How complete is the archive itself? The figures below were computed on the 2015–2024
-subset of the archive. Compared against HANZE, an independent European flood-impact
-database (367 floods, 2015–2024), **84.2%** of documented floods coincide
-with an archived event in the same country within a week, well above the ~77.5% expected
-by chance. The signal is strongest for **river floods (91.4%)** and indistinguishable
-from chance for **flash floods (76.2%)**, and completeness rises across that decade
-(76.1% in 2015 → 97.6% in 2024). The 2025 events added in index v1.1.0 are not yet
-covered by this audit.
+How complete is the archive itself? Compared against HANZE, an independent European
+flood-impact database (397 floods, 2015–2025), **84.6%** of documented floods coincide
+with an archived event in the same country within a week, above the ~78.8% expected
+by chance (p = 0.002). The signal is strongest for **river floods (91.8%)** and
+indistinguishable from chance for **flash floods (77.1%)**, and corroboration rises
+across the record (76.1% in 2015 → 97.6% in 2024, 90.0% in 2025). This is a
+co-occurrence indicator at country resolution, not a detection rate: a randomly dated
+record already matches most of the time, which is why the by-type split carries the
+result.
 
 ![Corroboration of HANZE-documented floods by the archive, by flood type, year, and matching window.](images/paper/fig-hanze-audit.png){ width="720" }
 

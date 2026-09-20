@@ -20,9 +20,12 @@ by the catalogue's ``collection``).
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from pathlib import Path
 from typing import Any
+
+import geopandas as gpd
+import pandas as pd
 
 from .config import Settings
 from .config import settings as _settings
@@ -37,12 +40,14 @@ from .pipelines.discovery import (
 )
 from .pipelines.hazard import HazardPipeline, mirror_hazard, verify_hazard_mirror
 from .services.mirror_ledger import MirrorReport, MirrorResult
+from .services.nuts import NutsRepository
 
 __all__ = [
     "download",
     "floods",
     "hazard",
     "mirror",
+    "nuts",
     "offline",
     "verify",
 ]
@@ -57,7 +62,9 @@ def floods(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     year: int | None = None,
     start: str | int | None = None,
     end: str | int | None = None,
@@ -70,11 +77,32 @@ def floods(
 
     Args:
         region: Place name, shapely geometry, GeoDataFrame, or bbox tuple.
-        point: A (lat, lon) point; combine with `radius_m`.
-        radius_m: Radius in metres around `point`.
-        bbox: A (minx, miny, maxx, maxy) bounding box (WGS84).
+        point: A ``(lat, lon)`` point in WGS 84, or ``(x, y)`` in a projected
+            ``crs``; combine with `radius_m`.
+        radius_m: Radius in ground metres around `point`.
+        bbox: A ``(minx, miny, maxx, maxy)`` bounding box in WGS 84 lon/lat, or in
+            ``crs``.
         shapefile: Path to a vector file used as the ROI.
-        buffer_m: Optional extra metric buffer around the ROI.
+        nuts: One or more Eurostat NUTS identifiers, e.g. ``"NL22"`` (Gelderland)
+            or ``["NL22", "NL21"]`` (their union). Case-insensitive; the level follows
+            from the identifier (``NL`` country, ``NL2``, ``NL22``, ``NL225``).
+            Boundaries come from the Eurostat GISCO 1:1M files for
+            ``settings.nuts_year`` (default 2024), downloaded once per level and
+            cached. Find identifiers with `nuts`.
+        buffer_m: Optional extra buffer around the ROI, in ground metres.
+        crs: Coordinate reference system of ``point``, ``bbox`` and a bare shapely
+            or 4-tuple ``region``: any horizontal (geographic or projected) CRS
+            accepted by ``pyproj.CRS.from_user_input``, e.g. an authority string
+            (``"EPSG:28992"``), an EPSG integer (``3035``), a WKT/PROJ string or a
+            ``pyproj.CRS``. Default ``None`` means WGS 84 lon/lat (``EPSG:4326``),
+            i.e. today's behaviour. ``point`` is ``(lat, lon)`` in any geographic
+            CRS and ``(x, y)`` = (easting, northing) in any projected CRS,
+            regardless of the axis order the CRS authority declares (EPSG:3035 is
+            northing-first in the registry but is still given as (easting,
+            northing) here); ``bbox`` is always ``(minx, miny, maxx, maxy)``. A
+            GeoDataFrame or vector file carries its own CRS: ``crs`` then only
+            fills in a missing one and must agree with it otherwise. Not valid
+            with a place name. The result is always EPSG:4326.
         year: Keep only events in this year.
         start: Keep events on/after this date (``"YYYY"`` or ``"YYYY-MM-DD"``).
         end: Keep events on/before this date (``"YYYY"`` or ``"YYYY-MM-DD"``).
@@ -93,6 +121,12 @@ def floods(
 
     Raises:
         GeocodingError: If a place name cannot be resolved.
+        CRSError: (a `GeocodingError`) if ``crs`` is invalid, conflicts with the
+            CRS of a GeoDataFrame/file, is combined with a place name, or the
+            coordinates do not fit it.
+        NutsError: (a `GeocodingError`) if a NUTS identifier is malformed or
+            unknown, has no published boundary, or its boundary file is unavailable
+            offline.
         FileNotFoundError: If no index is available locally and no remote index
             is configured (run ``build-index``/``mirror-index`` or set
             ``index_mode="remote"``).
@@ -102,6 +136,12 @@ def floods(
         >>> cat = ef.floods("Zutphen")  # doctest: +SKIP
         >>> recent = cat[cat["date"] >= "2021-01-01"]  # doctest: +SKIP
         >>> recent.download("out/")  # doctest: +SKIP
+        >>> ef.floods(
+        ...     bbox=(200000, 455000, 220000, 475000), crs="EPSG:28992"
+        ... )  # Dutch RD New metres  # doctest: +SKIP
+        >>> ef.floods(
+        ...     nuts="NL22"
+        ... )  # a Eurostat NUTS region (Gelderland)  # doctest: +SKIP
     """
     pipeline = DiscoveryPipeline(settings=settings)
     return pipeline.query(
@@ -110,7 +150,9 @@ def floods(
         radius_m=radius_m,
         bbox=bbox,
         shapefile=shapefile,
+        nuts=nuts,
         buffer_m=buffer_m,
+        crs=crs,
         year=year,
         start=start,
         end=end,
@@ -127,7 +169,9 @@ def hazard(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     return_period: int | list[int] | None = None,
     level: int | None = None,
     shape: str = "exact",
@@ -143,11 +187,32 @@ def hazard(
 
     Args:
         region: Place name, shapely geometry, GeoDataFrame, or bbox tuple.
-        point: A (lat, lon) point; combine with `radius_m`.
-        radius_m: Radius in metres around `point`.
-        bbox: A (minx, miny, maxx, maxy) bounding box (WGS84).
+        point: A ``(lat, lon)`` point in WGS 84, or ``(x, y)`` in a projected
+            ``crs``; combine with `radius_m`.
+        radius_m: Radius in ground metres around `point`.
+        bbox: A ``(minx, miny, maxx, maxy)`` bounding box in WGS 84 lon/lat, or in
+            ``crs``.
         shapefile: Path to a vector file used as the ROI.
-        buffer_m: Optional extra metric buffer around the ROI.
+        nuts: One or more Eurostat NUTS identifiers, e.g. ``"NL22"`` (Gelderland)
+            or ``["NL22", "NL21"]`` (their union). Case-insensitive; the level follows
+            from the identifier (``NL`` country, ``NL2``, ``NL22``, ``NL225``).
+            Boundaries come from the Eurostat GISCO 1:1M files for
+            ``settings.nuts_year`` (default 2024), downloaded once per level and
+            cached. Find identifiers with `nuts`.
+        buffer_m: Optional extra buffer around the ROI, in ground metres.
+        crs: Coordinate reference system of ``point``, ``bbox`` and a bare shapely
+            or 4-tuple ``region``: any horizontal (geographic or projected) CRS
+            accepted by ``pyproj.CRS.from_user_input``, e.g. an authority string
+            (``"EPSG:28992"``), an EPSG integer (``3035``), a WKT/PROJ string or a
+            ``pyproj.CRS``. Default ``None`` means WGS 84 lon/lat (``EPSG:4326``),
+            i.e. today's behaviour. ``point`` is ``(lat, lon)`` in any geographic
+            CRS and ``(x, y)`` = (easting, northing) in any projected CRS,
+            regardless of the axis order the CRS authority declares (EPSG:3035 is
+            northing-first in the registry but is still given as (easting,
+            northing) here); ``bbox`` is always ``(minx, miny, maxx, maxy)``. A
+            GeoDataFrame or vector file carries its own CRS: ``crs`` then only
+            fills in a missing one and must agree with it otherwise. Not valid
+            with a place name. The result is always EPSG:4326.
         return_period: One or more of 10/20/50/75/100/200/500. ``None`` returns
             all available return periods.
         level: Optional NUTS level filter for place-name resolution.
@@ -163,6 +228,12 @@ def hazard(
 
     Raises:
         GeocodingError: If a place name cannot be resolved.
+        CRSError: (a `GeocodingError`) if ``crs`` is invalid, conflicts with the
+            CRS of a GeoDataFrame/file, is combined with a place name, or the
+            coordinates do not fit it.
+        NutsError: (a `GeocodingError`) if a NUTS identifier is malformed or
+            unknown, has no published boundary, or its boundary file is unavailable
+            offline.
         HazardError: If the hazard tile index cannot be located or read.
 
     Examples:
@@ -171,6 +242,13 @@ def hazard(
         ...     "hazard/"
         ... )  # doctest: +SKIP
         >>> ef.hazard("Zutphen", return_period=[100, 500])  # doctest: +SKIP
+        >>> ef.hazard(
+        ...     point=(308400, 5780300),
+        ...     radius_m=5000,
+        ...     crs="EPSG:32632",
+        ...     return_period=100,
+        ... )  # a UTM 32N point: (x, y)  # doctest: +SKIP
+        >>> ef.hazard(nuts=["NL22", "NL21"], return_period=100)  # doctest: +SKIP
     """
     pipeline = HazardPipeline(settings=settings)
     return pipeline.query(
@@ -179,7 +257,9 @@ def hazard(
         radius_m=radius_m,
         bbox=bbox,
         shapefile=shapefile,
+        nuts=nuts,
         buffer_m=buffer_m,
+        crs=crs,
         return_period=return_period,
         level=level,
         shape=shape,
@@ -238,6 +318,57 @@ def download(
     )
 
 
+def nuts(
+    query: str | None = None,
+    *,
+    level: int | None = None,
+    country: str | None = None,
+    geometry: bool = False,
+    settings: Settings | None = None,
+) -> pd.DataFrame | gpd.GeoDataFrame:
+    """Find Eurostat NUTS regions: search by name, or list by country and level.
+
+    Use it to find the identifier for `floods` / `hazard` ``nuts=`` (``"Gelderland"``
+    -> ``NL22``) or to enumerate regions to loop over (every Dutch NUTS-2 region).
+    NUTS levels: 0 country (``NL``), 1 major regions (``NL2``), 2 basic regions
+    (``NL22``), 3 small regions (``NL225``); an identifier's length gives its level.
+
+    Args:
+        query: A region name (accent/case-insensitive; bilingual and suffixed names
+            and common exonyms such as ``"Cologne"`` match, and every name containing
+            the text is listed), or a NUTS identifier, which lists that region and
+            its descendants (``"NL2"`` -> ``NL2``, ``NL22``, ``NL225``, ...).
+        level: Keep only this NUTS level (0-3).
+        country: Keep only this two-letter country code (``"NL"``).
+        geometry: Attach the boundary polygons (downloads the GISCO per-level files
+            the result needs, once). Without it only the 90 KB attribute table is
+            read, so a search never downloads a boundary file.
+        settings: Optional configuration (``nuts_year``, ``nuts_scale``, ...).
+
+    Returns:
+        A ``DataFrame`` with ``NUTS_ID``, ``LEVL_CODE``, ``CNTR_CODE``, ``NAME_LATN``
+        and ``NUTS_NAME`` sorted by identifier; with ``geometry=True`` a
+        ``GeoDataFrame`` in EPSG:4326. No match is an empty frame, not an error.
+
+    Raises:
+        NutsError: If the attribute table or a boundary file is unavailable offline
+            or fails to download.
+
+    Examples:
+        >>> import euroflood as ef
+        >>> ef.nuts("Gelderland")  # -> NL22 (level 2), NL224  # doctest: +SKIP
+        >>> ef.nuts(
+        ...     country="NL", level=2
+        ... )  # every Dutch NUTS-2 region  # doctest: +SKIP
+        >>> for nuts_id in ef.nuts(country="NL", level=2)["NUTS_ID"]:  # doctest: +SKIP
+        ...     ef.floods(nuts=nuts_id)
+        >>> ef.nuts("NL2", level=3, geometry=True).explore()  # doctest: +SKIP
+    """
+    return NutsRepository(settings=settings).regions(
+        query, level=level, country=country, geometry=geometry
+    )
+
+
 def offline(enabled: bool = True) -> None:
     """Flip EuroFlood into (or out of) fully-offline mode.
 
@@ -264,7 +395,9 @@ def mirror(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     return_period: int | list[int] | None = None,
     year: int | None = None,
     start: str | int | None = None,
@@ -283,7 +416,11 @@ def mirror(
     - ``"hazard"``: GLOFAS **hazard tiles** for the region.
     - ``"all"``: index + flood depths + hazard tiles for the region.
 
-    ``region``/``bbox``/``point``/… scope the region for ``floods``/``hazard``/``all``.
+    ``region``/``bbox``/``point``/… scope the region for ``floods``/``hazard``/``all``;
+    ``crs`` declares the coordinate reference system of ``bbox``/``point``/a bare
+    geometry, and ``nuts`` selects Eurostat NUTS regions by identifier, both as in
+    `floods`. Resolving a NUTS region caches its GISCO boundary file, so a later
+    offline run finds it.
     ``return_period`` applies to hazard, ``year``/``start``/``end`` to floods. Pass
     ``dry_run=True`` to plan without downloading.
 
@@ -307,7 +444,9 @@ def mirror(
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             year=year,
             start=start,
             end=end,
@@ -323,7 +462,9 @@ def mirror(
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             return_period=return_period,
             level=level,
             shape=shape,
@@ -339,7 +480,9 @@ def mirror(
                 radius_m=radius_m,
                 bbox=bbox,
                 shapefile=shapefile,
+                nuts=nuts,
                 buffer_m=buffer_m,
+                crs=crs,
                 year=year,
                 start=start,
                 end=end,
@@ -354,7 +497,9 @@ def mirror(
                 radius_m=radius_m,
                 bbox=bbox,
                 shapefile=shapefile,
+                nuts=nuts,
                 buffer_m=buffer_m,
+                crs=crs,
                 return_period=return_period,
                 level=level,
                 shape=shape,
@@ -375,7 +520,9 @@ def verify(
     radius_m: float = 0.0,
     bbox: tuple[float, float, float, float] | None = None,
     shapefile: str | Path | None = None,
+    nuts: str | Sequence[str] | None = None,
     buffer_m: float = 0.0,
+    crs: Any = None,
     return_period: int | list[int] | None = None,
     year: int | None = None,
     start: str | int | None = None,
@@ -387,7 +534,8 @@ def verify(
 ) -> MirrorReport | dict[str, MirrorReport]:
     """Report local-mirror readiness (present/missing/corrupt) for a data layer.
 
-    ``target`` mirrors `mirror` (``index``/``floods``/``hazard``/``all``). ``deep``
+    ``target`` mirrors `mirror` (``index``/``floods``/``hazard``/``all``), and so do
+    the ROI arguments including ``crs`` and ``nuts``. ``deep``
     re-hashes each file's sha256 against the ledger (slower, catches silent corruption).
     Returns a `MirrorReport` (or a ``{layer: MirrorReport}`` dict for ``"all"``).
     """
@@ -401,7 +549,9 @@ def verify(
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             year=year,
             start=start,
             end=end,
@@ -417,7 +567,9 @@ def verify(
             radius_m=radius_m,
             bbox=bbox,
             shapefile=shapefile,
+            nuts=nuts,
             buffer_m=buffer_m,
+            crs=crs,
             return_period=return_period,
             level=level,
             shape=shape,
@@ -433,7 +585,9 @@ def verify(
                 radius_m=radius_m,
                 bbox=bbox,
                 shapefile=shapefile,
+                nuts=nuts,
                 buffer_m=buffer_m,
+                crs=crs,
                 year=year,
                 start=start,
                 end=end,
@@ -448,7 +602,9 @@ def verify(
                 radius_m=radius_m,
                 bbox=bbox,
                 shapefile=shapefile,
+                nuts=nuts,
                 buffer_m=buffer_m,
+                crs=crs,
                 return_period=return_period,
                 level=level,
                 shape=shape,

@@ -41,6 +41,13 @@ haz = ef.hazard("Zutphen, Netherlands", return_period=[100, 500], shape="bbox")
 haz
 
 # %% [markdown]
+# Regions work exactly as for `floods()`, including `crs=` for coordinates in another system:
+# here a 5 km radius around a UTM 32N point (`point` is `(x, y)` in a projected CRS).
+
+# %%
+ef.hazard(point=(308400, 5780300), radius_m=5000, crs="EPSG:32632", return_period=100)
+
+# %% [markdown]
 # Download and measure them. GLOFAS depth is already in **metres** and is reported as-is (EFAS
 # historic depth is centimetres; the scale is chosen automatically per catalogue).
 
